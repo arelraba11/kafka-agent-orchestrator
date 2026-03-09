@@ -2,12 +2,11 @@
 
 Advanced Data Engineering course project.
 
-This repository implements a distributed chatbot system built on Apache Kafka and event-driven microservices. User messages are processed by a pipeline of independent services that communicate exclusively through Kafka topics — there is no direct service-to-service communication.
-
-The project is structured as two progressive exercises:
+This repository implements a series of Kafka-based data engineering exercises. Each exercise builds on the previous, progressing from a distributed microservices chatbot to an LLM-powered prompt engineering pipeline to a real-time review analysis system.
 
 - **Exercise 1** — baseline distributed router with memory and rule-based intent detection
 - **Exercise 2** — extends Exercise 1 with an LLM prompt engineering layer (Few-Shot classification, structured JSON extraction, Chain-of-Thought reasoning, and safety guardrails)
+- **Exercise 3** — real-time review intelligence pipeline: producer streams user reviews through Kafka, an LLM processor extracts structured sentiment insights, and an analytics consumer displays results live
 
 ---
 
@@ -20,11 +19,13 @@ The project is structured as two progressive exercises:
 | Messaging | Apache Kafka (KafkaJS client) |
 | Infrastructure | Docker, Docker Compose |
 | Architecture | Event-Driven Microservices |
-| LLM Integration | Pluggable `callLLM()` stub (Exercise 2) |
+| LLM Integration | OpenAI API (`gpt-4o-mini`) |
 
 ---
 
 ## Architecture Overview
+
+### Exercise 1 — Distributed Chatbot
 
 ```
 User Input
@@ -52,7 +53,7 @@ Kafka Topic
                 UserInterface (stdout)
 ```
 
-In Exercise 2, an LLM pipeline is inserted between the router and the domain apps:
+### Exercise 2 — LLM Prompt Engineering
 
 ```
 user_input_events
@@ -61,6 +62,27 @@ user_input_events
                                     ├──▶ LLMExtractionService ──▶ llm_response_events
                                     │         └──▶ JSONParserService ──▶ function_execution_requests
                                     └──▶ CotMathService ──▶ cot_math_expression_events
+```
+
+### Exercise 3 — Review Intelligence Pipeline
+
+```
+User Input
+    │
+    ▼
+Producer
+    │
+    ▼
+raw-reviews-topic
+    │
+    ▼
+Processor (LLM routing + sentiment analysis + self-correction)
+    │
+    ▼
+processed-insights-topic
+    │
+    ▼
+Analytics (real-time insights + running average score)
 ```
 
 ---
@@ -87,6 +109,20 @@ kafka-beginners-course-main/
 │   ├── tsconfig.json
 │   └── README.md
 │
+├── exercise3/               # Real-time review intelligence pipeline
+│   ├── kafka/               # Kafka client utilities
+│   ├── llm/                 # OpenAI client
+│   ├── shared/              # Topics and event types
+│   ├── producer.ts          # CLI review producer
+│   ├── processor.ts         # LLM processing service
+│   ├── analytics.ts         # Real-time analytics consumer
+│   ├── prompts.ts           # Prompt templates
+│   ├── docker-compose.yml
+│   ├── topics.sh
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── README.md
+│
 └── README.md                # This file
 ```
 
@@ -94,7 +130,7 @@ kafka-beginners-course-main/
 
 ## Prerequisites
 
-The following tools must be installed before running either exercise.
+The following tools must be installed before running any exercise.
 
 **Docker**
 ```bash
@@ -107,7 +143,14 @@ docker compose version
 bun --version   # >= 1.0
 ```
 
-Kafka runs inside Docker via `bitnami/kafka:3.5` in KRaft mode (no Zookeeper required). No local Kafka installation is needed.
+**OpenAI API key** (required for Exercise 3)
+
+Create a `.env` file at the project root:
+```
+OPENAI_API_KEY=your_key_here
+```
+
+Kafka runs inside Docker in KRaft mode (no Zookeeper required). No local Kafka installation is needed.
 
 ---
 
@@ -116,4 +159,5 @@ Kafka runs inside Docker via `bitnami/kafka:3.5` in KRaft mode (no Zookeeper req
 Each exercise is self-contained. Refer to the exercise-specific README for full setup and run instructions:
 
 - [`exercise1/README.md`](exercise1/README.md) — baseline distributed chatbot
-- [`exercise2/README.md`](exercise2/README.md) — LLM-enhanced pipeline
+- [`exercise2/README.md`](exercise2/README.md) — LLM prompt engineering pipeline
+- [`exercise3/README.md`](exercise3/README.md) — real-time review intelligence pipeline
