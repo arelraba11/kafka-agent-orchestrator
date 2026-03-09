@@ -63,3 +63,24 @@ docker-compose.override.yml
 
 # Misc
 coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python caches
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Python packaging
+*.egg-info/
+dist/
