@@ -36,3 +36,30 @@ out/
 
 # JVM crash logs
 hs_err_pid*
+
+# Node / Bun
+node_modules/
+bun.lockb
+bun.lock
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# TypeScript build output
+dist/
+build/
+*.tsbuildinfo
+
+# Runtime data
+history.json
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# Docker
+docker-compose.override.yml
+
+# Misc
+coverage/
