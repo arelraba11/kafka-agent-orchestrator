@@ -97,6 +97,11 @@ export type LLMIntent = "getWeather" | "calculateMath" | "currencyExchange" | "g
 export interface RouterDecisionEvent {
   userId: string;
   input: string;
+  // Populated downstream by llm-router-service after LLM classification.
+  // Not present when routerService forwards raw input in ROUTER_MODE=llm.
+  intent?: LLMIntent;
+  parameters?: Record<string, unknown>;
+  confidence?: number;
   timestamp: string;
 }
 
@@ -104,10 +109,12 @@ export interface RouterDecisionEvent {
 // Producer: guardrail-service
 // Consumer:  (audit log only — no downstream consumer)
 
+export type ViolationType = "politics" | "malware";
+
 export interface GuardrailViolationEvent {
   userId: string;
   userInput: string;
-  violationType: "politics" | "malware";
+  violationType: ViolationType;
   message: string;
   timestamp: string;
 }
@@ -119,5 +126,55 @@ export interface CotMathExpressionEvent {
   originalInput: string;
   expression: string;
   reasoning: string;
+  timestamp: string;
+}
+
+// ─── Exercise 2 events ─────────────────────────────────────────────────────
+// LLM pipeline events for the prompt-engineering pipeline (Exercise 2).
+
+// ─── llm-prompt-requests ─────────────────────────────────────────────────────
+// Producer: llm-router-service
+// Consumer: (LLM gateway — future)
+
+export interface LLMPromptRequestEvent {
+  userId: string;
+  intent: LLMIntent;
+  prompt: string;
+  timestamp: string;
+}
+
+// ─── llm-response-events ─────────────────────────────────────────────────────
+// Producer: llm-router-service
+// Consumer: (json-parser — merged into llm-router-service)
+
+export interface LLMResponseEvent {
+  userId: string;
+  intent: LLMIntent;
+  rawResponse: string;
+  timestamp: string;
+}
+
+// ─── function-execution-requests ─────────────────────────────────────────────
+// Producer: llm-router-service (after JSON parsing)
+// Consumers: mathApp, weatherApp, exchangeApp, generalChatApp
+
+export interface FunctionExecutionRequestEvent {
+  userId: string;
+  intent: LLMIntent;
+  parameters: Record<string, unknown>;
+  confidence: number;
+  timestamp: string;
+}
+
+// ─── bot-output-events ───────────────────────────────────────────────────────
+// Producer: apps (mathApp, weatherApp, exchangeApp, generalChatApp)
+// Consumer: response-aggregator
+
+export interface BotOutputEvent {
+  userId: string;
+  intent: LLMIntent;
+  result: string;
+  success: boolean;
+  error?: string;
   timestamp: string;
 }
