@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "start:all": "./scripts/start-all.sh",
+    "start:regex": "./scripts/start-regex-mode.sh",
+    "start:llm": "./scripts/start-llm-mode.sh"
+  },
   "dependencies": {
     "kafkajs": "^2.2.4",
     "openai": "^6.27.0"
