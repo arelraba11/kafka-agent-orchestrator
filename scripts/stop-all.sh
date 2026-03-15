@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# scripts/stop-all.sh
-# Stops all running Bun services.
+# Stop all running Bun services.
 # Usage: bash scripts/stop-all.sh
 
-pkill -f bun && echo "[stop] All Bun services stopped." || echo "[stop] No Bun processes found."
+echo "=== Stopping all Bun services ==="
+pkill -f bun && echo "Done." || echo "No Bun processes found."

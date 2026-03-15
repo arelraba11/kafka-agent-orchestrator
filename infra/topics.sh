@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates all Exercise 1 Kafka topics.
+# Creates all Exercise 1, 2, and 3 Kafka topics.
 # Run after Kafka is up: bash infra/topics.sh
 
 KAFKA_CONTAINER="kafka"
@@ -18,6 +18,9 @@ TOPICS=(
   "conversation-history-update"
   "router-decision-events"
   "guardrail-violation-events"
+  # Exercise 3 — Review Analysis Pipeline
+  "raw-reviews-topic"
+  "processed-insights-topic"
 )
 
 for TOPIC in "${TOPICS[@]}"; do

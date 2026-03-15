@@ -18,6 +18,10 @@ export const TOPICS = {
   FUNCTION_EXECUTION_REQUESTS:"function-execution-requests",
   BOT_OUTPUT_EVENTS:          "bot-output-events",
   COT_MATH_EXPRESSION_EVENTS: "cot-math-expression-events",
+
+  // ── Exercise 3 — Review Analysis Pipeline ────────────────────────────────
+  RAW_REVIEWS:        "raw-reviews-topic",
+  PROCESSED_INSIGHTS: "processed-insights-topic",
 } as const;
 
 export type TopicName = typeof TOPICS[keyof typeof TOPICS];
