@@ -16,6 +16,8 @@ TOPICS=(
   "app-results"
   "bot-responses"
   "conversation-history-update"
+  "router-decision-events"
+  "guardrail-violation-events"
 )
 
 for TOPIC in "${TOPICS[@]}"; do

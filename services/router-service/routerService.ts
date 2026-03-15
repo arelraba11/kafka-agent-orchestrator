@@ -13,10 +13,15 @@ import type {
   IntentExchangeEvent,
   IntentGeneralChatEvent,
   ConversationHistoryUpdateEvent,
+  RouterDecisionEvent,
 } from "../../shared/types/events";
 import type { ConversationHistory } from "../../shared/types/conversation";
 
-// ─── Intent classification ────────────────────────────────────────────────────
+// ─── Mode ─────────────────────────────────────────────────────────────────────
+
+const ROUTER_MODE = process.env.ROUTER_MODE ?? "regex";
+
+// ─── Intent classification (regex — used in ROUTER_MODE=regex) ────────────────
 
 const MATH_REGEX = /[\d]+\s*[+\-*/]\s*[\d]+/;
 const WEATHER_REGEX = /\b(weather|temperature|forecast|hot|cold|rain|sunny)\b/i;
@@ -25,9 +30,9 @@ const CITY_REGEX = /\bin\s+([A-Za-z\s]+?)(?:\?|$)/i;
 
 type Intent = "math" | "weather" | "exchange" | "chat";
 
-function classify(input: string): Intent {
-  if (MATH_REGEX.test(input))    return "math";
-  if (WEATHER_REGEX.test(input)) return "weather";
+function regexClassify(input: string): Intent {
+  if (MATH_REGEX.test(input))     return "math";
+  if (WEATHER_REGEX.test(input))  return "weather";
   if (CURRENCY_REGEX.test(input)) return "exchange";
   return "chat";
 }
@@ -58,7 +63,17 @@ async function route(
   history: ConversationHistoryCache
 ): Promise<void> {
   const { userId, userInput, timestamp } = event;
-  const intent = classify(userInput);
+
+  // ── LLM mode: forward raw input to llm-router-service + cot-math-service ──
+  if (ROUTER_MODE === "llm") {
+    const payload: RouterDecisionEvent = { userId, input: userInput, timestamp };
+    await sendMessage(producer, TOPICS.ROUTER_DECISION, userId, payload);
+    console.log(`[router] userId=${userId} mode=llm → published to router-decision-events`);
+    return;
+  }
+
+  // ── Regex mode: existing logic unchanged ──────────────────────────────────
+  const intent = regexClassify(userInput);
 
   console.log(`[router] userId=${userId} intent=${intent} input="${userInput}"`);
 

@@ -7,7 +7,9 @@ export const TOPICS = {
   INTENT_CHAT:    "intent-general-chat",
   APP_RESULTS:    "app-results",
   BOT_RESPONSES:  "bot-responses",
-  HISTORY_UPDATE: "conversation-history-update",
+  HISTORY_UPDATE:       "conversation-history-update",
+  ROUTER_DECISION:      "router-decision-events",
+  GUARDRAIL_VIOLATION:  "guardrail-violation-events",
 } as const;
 
 export type TopicName = typeof TOPICS[keyof typeof TOPICS];

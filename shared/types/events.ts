@@ -87,3 +87,37 @@ export interface ConversationHistoryUpdateEvent {
   history: ConversationHistory;
   timestamp: string;
 }
+
+// ─── router-decision-events ──────────────────────────────────────────────────
+// Producer: routerService.ts (ROUTER_MODE=llm only)
+// Consumers: llm-router-service, cot-math-service
+
+export type LLMIntent = "getWeather" | "calculateMath" | "currencyExchange" | "generalChat";
+
+export interface RouterDecisionEvent {
+  userId: string;
+  input: string;
+  timestamp: string;
+}
+
+// ─── guardrail-violation-events ──────────────────────────────────────────────
+// Producer: guardrail-service
+// Consumer:  (audit log only — no downstream consumer)
+
+export interface GuardrailViolationEvent {
+  userId: string;
+  userInput: string;
+  violationType: "politics" | "malware";
+  message: string;
+  timestamp: string;
+}
+
+// ─── cot-math (local only — not produced to Kafka) ───────────────────────────
+
+export interface CotMathExpressionEvent {
+  userId: string;
+  originalInput: string;
+  expression: string;
+  reasoning: string;
+  timestamp: string;
+}
