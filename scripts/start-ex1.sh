@@ -5,24 +5,17 @@
 set -e
 cd "$(dirname "$0")/.."
 
-echo "=== Starting Exercise 1 — Distributed Chatbot (ROUTER_MODE=regex) ==="
+mkdir -p logs
 
 export ROUTER_MODE=regex
 
-bun run services/memory-service/memoryService.ts &
-bun run services/response-aggregator/responseAggregator.ts &
+bun run services/memory-service/memoryService.ts           > logs/memory-service.log 2>&1 &
+bun run services/response-aggregator/responseAggregator.ts > logs/response-aggregator.log 2>&1 &
+bun run services/apps/mathApp.ts                           > logs/math-app.log 2>&1 &
+bun run services/apps/weatherApp.ts                        > logs/weather-app.log 2>&1 &
+bun run services/apps/exchangeApp.ts                       > logs/exchange-app.log 2>&1 &
+bun run services/apps/generalChatApp.ts                    > logs/general-chat-app.log 2>&1 &
+bun run services/router-service/routerService.ts           > logs/router-service.log 2>&1 &
 
-bun run services/apps/mathApp.ts &
-bun run services/apps/weatherApp.ts &
-bun run services/apps/exchangeApp.ts &
-bun run services/apps/generalChatApp.ts &
-
-bun run services/router-service/routerService.ts &
-
-echo ""
-echo "All background services started. Launching user interface..."
-echo ""
-
-bun run services/user-interface/userInterface.ts
-
-wait
+echo "Exercise 1 services started (ROUTER_MODE=regex). Logs in logs/"
+echo "Start the UI manually: bun run services/user-interface/userInterface.ts"
