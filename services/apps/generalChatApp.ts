@@ -8,6 +8,8 @@ import {
 import { TOPICS } from "../../shared/topics";
 import type { IntentGeneralChatEvent, AppResultEvent } from "../../shared/types/events";
 import type { ConversationHistory } from "../../shared/types/conversation";
+import type { ToolInvocationRequested } from "../../shared/schemas/ToolInvocationRequested";
+import type { ToolInvocationResulted } from "../../shared/schemas/ToolInvocationResulted";
 
 // ─── Rule-based response engine ───────────────────────────────────────────────
 
@@ -103,8 +105,11 @@ function generateResponse(userInput: string, history: ConversationHistory): stri
 
 const producer = await createProducer();
 const consumer = await createConsumer("chat-service");
+const consumerTool = await createConsumer("chat-tool-worker");
 
-registerShutdown([producer, consumer]);
+registerShutdown([producer, consumer, consumerTool]);
+
+// ── Ex1/2: intent-general-chat consumer (unchanged) ──────────────────────────
 
 await subscribeAndRun(
   consumer,
@@ -130,5 +135,38 @@ await subscribeAndRun(
     await sendMessage(producer, TOPICS.APP_RESULTS, userId, payload);
   }
 );
+
+// ── Final Project: tool-invocation-requests consumer ─────────────────────────
+
+subscribeAndRun(
+  consumerTool,
+  [TOPICS.TOOL_INVOCATION_REQUESTS],
+  async (_topic, _key, value) => {
+    const req = value as ToolInvocationRequested;
+    if (req.payload.toolName !== "chat") return;
+
+    const { conversationId } = req;
+    const userInput = (req.payload.input.userInput as string) ?? "";
+    const context   = (req.payload.input.context   as ConversationHistory) ?? [];
+
+    console.log(`[chat] tool conversationId=${conversationId} input="${userInput}"`);
+
+    const resultStr = generateResponse(userInput, context);
+
+    console.log(`[chat] tool result="${resultStr}"`);
+
+    const event: ToolInvocationResulted = {
+      conversationId,
+      timestamp: Date.now(),
+      eventType: "ToolInvocationResulted",
+      payload: {
+        toolName: "chat",
+        result: { value: resultStr, success: true },
+      },
+    };
+
+    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+  }
+).catch(err => console.error("[chat] Tool worker error:", err));
 
 console.log("[chat] GeneralChatApp started.");

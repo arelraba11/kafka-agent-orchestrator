@@ -7,6 +7,8 @@ import {
 } from "../../shared/kafka/client";
 import { TOPICS } from "../../shared/topics";
 import type { IntentWeatherEvent, AppResultEvent } from "../../shared/types/events";
+import type { ToolInvocationRequested } from "../../shared/schemas/ToolInvocationRequested";
+import type { ToolInvocationResulted } from "../../shared/schemas/ToolInvocationResulted";
 
 // ─── Mock weather data ────────────────────────────────────────────────────────
 
@@ -42,15 +44,18 @@ function formatResult(city: string, data: WeatherData): string {
 
 const producer = await createProducer();
 const consumer = await createConsumer("weather-service");
+const consumerTool = await createConsumer("weather-tool-worker");
 
-registerShutdown([producer, consumer]);
+registerShutdown([producer, consumer, consumerTool]);
+
+// ── Ex1/2: intent-weather consumer (unchanged) ────────────────────────────────
 
 await subscribeAndRun(
   consumer,
   [TOPICS.INTENT_WEATHER],
   async (_topic, _key, value) => {
     const event = value as IntentWeatherEvent;
-    const { userId, city, timestamp } = event;
+    const { userId, city } = event;
 
     console.log(`[weather] userId=${userId} city="${city}"`);
 
@@ -87,5 +92,38 @@ await subscribeAndRun(
     await sendMessage(producer, TOPICS.APP_RESULTS, userId, payload);
   }
 );
+
+// ── Final Project: tool-invocation-requests consumer ─────────────────────────
+
+subscribeAndRun(
+  consumerTool,
+  [TOPICS.TOOL_INVOCATION_REQUESTS],
+  async (_topic, _key, value) => {
+    const req = value as ToolInvocationRequested;
+    if (req.payload.toolName !== "weather") return;
+
+    const { conversationId } = req;
+    const city = (req.payload.input.city as string) ?? "Tel Aviv";
+
+    console.log(`[weather] tool conversationId=${conversationId} city="${city}"`);
+
+    const data = getMockWeather(city);
+    const resultStr = formatResult(city, data);
+
+    console.log(`[weather] tool result="${resultStr}"`);
+
+    const event: ToolInvocationResulted = {
+      conversationId,
+      timestamp: Date.now(),
+      eventType: "ToolInvocationResulted",
+      payload: {
+        toolName: "weather",
+        result: { value: resultStr, city, temp: data.temp, condition: data.condition, success: true },
+      },
+    };
+
+    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+  }
+).catch(err => console.error("[weather] Tool worker error:", err));
 
 console.log("[weather] WeatherApp started.");
