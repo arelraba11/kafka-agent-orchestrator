@@ -10,17 +10,13 @@ import type { PlanGenerated } from "../../shared/schemas/PlanGenerated";
 import type { ToolInvocationRequested } from "../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../shared/schemas/ToolInvocationResulted";
 import type { PlanCompleted } from "../../shared/schemas/PlanCompleted";
-
-// ─── State store ─────────────────────────────────────────────────────────────
-
-interface ConversationState {
-  steps: string[];
-  stepIndex: number;
-  results: Record<string, unknown>[];
-  planReceivedAt: number;
-}
-
-const store = new Map<string, ConversationState>();
+import {
+  initializeStore,
+  getPlan,
+  savePlan,
+  updatePlan,
+  deletePlan,
+} from "../../shared/state/planStore";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +44,7 @@ async function onPlanGenerated(
   const { conversationId, payload } = event;
   const { steps } = payload;
 
-  store.set(conversationId, { steps, stepIndex: 0, results: [], planReceivedAt: Date.now() });
+  await savePlan(conversationId, { plan: steps, stepIndex: 0, results: [], status: "in_progress", planReceivedAt: Date.now() });
   console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.join(", ")}]`);
 
   await dispatchStep(producer, conversationId, steps[0]);
@@ -59,21 +55,23 @@ async function onToolInvocationResulted(
   event: ToolInvocationResulted
 ): Promise<void> {
   const { conversationId, payload } = event;
-  const state = store.get(conversationId);
+  const state = await getPlan(conversationId);
 
   if (!state) {
     console.warn(`[orchestrator] Received result for unknown conversationId=${conversationId}, skipping.`);
     return;
   }
 
-  state.results.push({ toolName: payload.toolName, result: payload.result });
-  state.stepIndex += 1;
+  const updatedResults = [...state.results, { toolName: payload.toolName, result: payload.result }];
+  const updatedStepIndex = state.stepIndex + 1;
 
-  console.log(`[orchestrator] conversationId=${conversationId} step ${state.stepIndex}/${state.steps.length} completed tool="${payload.toolName}"`);
+  await updatePlan(conversationId, { results: updatedResults, stepIndex: updatedStepIndex });
 
-  if (state.stepIndex < state.steps.length) {
+  console.log(`[orchestrator] conversationId=${conversationId} step ${updatedStepIndex}/${state.plan.length} completed tool="${payload.toolName}"`);
+
+  if (updatedStepIndex < state.plan.length) {
     // More steps to execute
-    await dispatchStep(producer, conversationId, state.steps[state.stepIndex]);
+    await dispatchStep(producer, conversationId, state.plan[updatedStepIndex]);
     return;
   }
 
@@ -82,19 +80,22 @@ async function onToolInvocationResulted(
     conversationId,
     timestamp: Date.now(),
     eventType: "PlanCompleted",
-    payload: { results: state.results },
+    payload: { results: updatedResults },
   };
 
   await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planCompleted);
 
   const workerLatency = Date.now() - state.planReceivedAt;
-  console.log(`[orchestrator] conversationId=${conversationId} plan completed, results=${state.results.length}`);
+  console.log(`[orchestrator] conversationId=${conversationId} plan completed, results=${updatedResults.length}`);
   console.log(`[Benchmark] conversationId=${conversationId} workerLatency=${workerLatency}ms`);
 
-  store.delete(conversationId);
+  await deletePlan(conversationId);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
+
+await initializeStore();
+console.log("[orchestrator] PlanStore initialized");
 
 const producer = await createProducer();
 const consumer = await createConsumer("orchestrator-service");

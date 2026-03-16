@@ -91,3 +91,6 @@ services/python-rag/chroma_db/
 # Claude files
 .claude/
 CLAUDE.md
+
+# LevelDB state store
+.plan-store/
