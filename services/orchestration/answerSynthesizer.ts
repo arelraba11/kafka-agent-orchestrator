@@ -23,7 +23,7 @@ function extractAnswer(results: Record<string, unknown>[]): string {
   const lines: string[] = [];
 
   for (const item of results) {
-    const { toolName, result } = item as ToolResult;
+    const { toolName, result } = item as unknown as ToolResult;
     const value = result.value as string | undefined;
 
     if (!value) continue;
@@ -66,7 +66,7 @@ await subscribeAndRun(
     if (event.eventType !== "PlanCompleted") return;
 
     const planCompleted = event as PlanCompleted;
-    const { conversationId, payload } = planCompleted;
+    const { conversationId, timestamp: planCompletedAt, payload } = planCompleted;
 
     console.log(`[synthesizer] conversationId=${conversationId} results=${payload.results.length}`);
 
@@ -80,7 +80,10 @@ await subscribeAndRun(
     };
 
     await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, finalEvent);
+
+    const synthesizerLatency = Date.now() - planCompletedAt;
     console.log(`[synthesizer] conversationId=${conversationId} answer="${answer}"`);
+    console.log(`[Benchmark] conversationId=${conversationId} synthesizerLatency=${synthesizerLatency}ms`);
   }
 );
 

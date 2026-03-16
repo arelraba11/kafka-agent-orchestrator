@@ -17,6 +17,7 @@ interface ConversationState {
   steps: string[];
   stepIndex: number;
   results: Record<string, unknown>[];
+  planReceivedAt: number;
 }
 
 const store = new Map<string, ConversationState>();
@@ -47,7 +48,7 @@ async function onPlanGenerated(
   const { conversationId, payload } = event;
   const { steps } = payload;
 
-  store.set(conversationId, { steps, stepIndex: 0, results: [] });
+  store.set(conversationId, { steps, stepIndex: 0, results: [], planReceivedAt: Date.now() });
   console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.join(", ")}]`);
 
   await dispatchStep(producer, conversationId, steps[0]);
@@ -85,7 +86,10 @@ async function onToolInvocationResulted(
   };
 
   await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planCompleted);
+
+  const workerLatency = Date.now() - state.planReceivedAt;
   console.log(`[orchestrator] conversationId=${conversationId} plan completed, results=${state.results.length}`);
+  console.log(`[Benchmark] conversationId=${conversationId} workerLatency=${workerLatency}ms`);
 
   store.delete(conversationId);
 }

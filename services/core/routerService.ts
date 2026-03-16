@@ -205,7 +205,10 @@ async function routePlan(
   };
 
   await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
+
+  const routerLatency = Date.now() - event.timestamp;
   console.log(`[router] conversationId=${conversationId} plan=[${steps.join(", ")}] input="${payload.userInput}"`);
+  console.log(`[Benchmark] conversationId=${conversationId} routerLatency=${routerLatency}ms`);
 }
 
 // ─── Conversation history cache ───────────────────────────────────────────────
