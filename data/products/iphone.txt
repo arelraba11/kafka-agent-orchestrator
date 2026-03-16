@@ -1,0 +1,7 @@
+The iPhone is a line of smartphones designed and marketed by Apple Inc. The iPhone runs iOS, Apple's proprietary mobile operating system, and integrates hardware and software developed entirely by Apple. iPhones are available in multiple storage capacities, typically ranging from 128GB to 1TB depending on the model.
+
+The iPhone 15 Pro and Pro Max feature a titanium frame, which is lighter and stronger than previous stainless steel designs. The display uses ProMotion OLED technology with a 120Hz adaptive refresh rate. The A17 Pro chip is built on a 3-nanometer process and delivers significant improvements in both CPU and GPU performance compared to previous generations.
+
+iPhone cameras have been a major selling point across all models. The Pro lineup includes a 48MP main camera, a 12MP ultrawide camera, and a 12MP telephoto camera with up to 5x optical zoom on the iPhone 15 Pro Max. Features such as Smart HDR, Night Mode, and Cinematic Mode are available on recent models for both photos and videos.
+
+iPhones support Apple ecosystem integrations including iCloud for storage and backup, AirDrop for file sharing, and seamless connectivity with Macs, iPads, and Apple Watches. The devices include Face ID for biometric authentication and support Apple Pay for contactless payments. The iPhone 15 lineup uses USB-C, replacing the Lightning connector used in prior generations.
