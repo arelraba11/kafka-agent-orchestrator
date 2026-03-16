@@ -22,7 +22,6 @@ scripts/logs/
 
 # Environment variables
 .env
-.env.*
 
 # IDE
 .idea/
@@ -85,3 +84,7 @@ ENV/
 # Python packaging
 *.egg-info/
 dist/
+
+# Claude files
+.claude/
+CLAUDE.md
