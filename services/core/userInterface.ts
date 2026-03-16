@@ -7,6 +7,8 @@ import {
 } from "../../shared/kafka/client";
 import { TOPICS } from "../../shared/topics";
 import type { UserInputEvent, UserControlEvent, BotResponseEvent } from "../../shared/types/events";
+import type { UserQueryReceived } from "../../shared/schemas/UserQueryReceived";
+import type { FinalAnswerSynthesized } from "../../shared/schemas/FinalAnswerSynthesized";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -16,10 +18,11 @@ const USER_ID = process.env.USER_ID ?? "user-1";
 
 const producer = await createProducer();
 const consumer = await createConsumer("ui-service");
+const consumerFinalAnswer = await createConsumer("ui-service-final-answer");
 
-registerShutdown([producer, consumer]);
+registerShutdown([producer, consumer, consumerFinalAnswer]);
 
-// ─── Consume bot responses ────────────────────────────────────────────────────
+// ─── Consume bot responses (Ex1/2) ───────────────────────────────────────────
 
 subscribeAndRun(
   consumer,
@@ -30,6 +33,18 @@ subscribeAndRun(
     console.log(`\nBot [${event.sourceType}]: ${event.message}\n> `);
   }
 ).catch(err => console.error("[ui] Consumer error:", err));
+
+// ─── Consume final answers (Final Project) ───────────────────────────────────
+
+subscribeAndRun(
+  consumerFinalAnswer,
+  [TOPICS.CONVERSATION_EVENTS],
+  async (_topic, _key, value) => {
+    const event = value as FinalAnswerSynthesized;
+    if (event.eventType !== "FinalAnswerSynthesized") return;
+    console.log(`\nbot: ${event.payload.answer}\n> `);
+  }
+).catch(err => console.error("[ui] Final answer consumer error:", err));
 
 // ─── Read user input from console ────────────────────────────────────────────
 
@@ -53,12 +68,23 @@ for await (const chunk of Bun.stdin.stream()) {
     continue;
   }
 
-  const event: UserInputEvent = {
+  // Ex1/2: send legacy UserInputEvent
+  const legacyEvent: UserInputEvent = {
     userId: USER_ID,
     userInput: input,
     timestamp: new Date().toISOString(),
   };
+  await sendMessage(producer, TOPICS.USER_INPUT, USER_ID, legacyEvent);
 
-  await sendMessage(producer, TOPICS.USER_INPUT, USER_ID, event);
+  // Final Project: send UserQueryReceived to user-commands
+  const conversationId = crypto.randomUUID();
+  const queryEvent: UserQueryReceived = {
+    conversationId,
+    timestamp: Date.now(),
+    eventType: "UserQueryReceived",
+    payload: { userInput: input },
+  };
+  await sendMessage(producer, TOPICS.USER_COMMANDS, conversationId, queryEvent);
+
   process.stdout.write("> ");
 }

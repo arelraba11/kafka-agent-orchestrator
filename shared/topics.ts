@@ -23,6 +23,12 @@ export const TOPICS = {
   SANITIZED_MESSAGES:    "sanitized-messages",
   ANALYSIS_SENTIMENT:    "analysis-sentiment",
   ANALYSIS_URGENCY:      "analysis-urgency",
+
+  // ── Final Project — Event-Sourced AI Agent ────────────────────────────────
+  USER_COMMANDS:             "user-commands",
+  CONVERSATION_EVENTS:       "conversation-events",
+  TOOL_INVOCATION_REQUESTS:  "tool-invocation-requests",
+  DEAD_LETTER_QUEUE:         "dead-letter-queue",
 } as const;
 
 export type TopicName = typeof TOPICS[keyof typeof TOPICS];
