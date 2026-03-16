@@ -1,0 +1,5 @@
+chromadb
+sentence-transformers
+kafka-python
+fastapi
+uvicorn

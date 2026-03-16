@@ -85,6 +85,9 @@ ENV/
 *.egg-info/
 dist/
 
+# Local vector databases
+services/python-rag/chroma_db/
+
 # Claude files
 .claude/
 CLAUDE.md
