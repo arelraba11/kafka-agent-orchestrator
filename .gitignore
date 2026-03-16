@@ -39,15 +39,12 @@ hs_err_pid*
 
 # Node / Bun
 node_modules/
-bun.lockb
-bun.lock
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
 # TypeScript build output
 dist/
-build/
 *.tsbuildinfo
 
 # Runtime data
@@ -61,7 +58,7 @@ temp/
 # Docker
 docker-compose.override.yml
 
-# Misc
+# Coverage
 coverage/
 
 # Python
@@ -83,7 +80,6 @@ ENV/
 
 # Python packaging
 *.egg-info/
-dist/
 
 # Local vector databases
 services/python-rag/chroma_db/

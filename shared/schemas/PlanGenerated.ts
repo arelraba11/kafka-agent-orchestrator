@@ -3,8 +3,13 @@
 // Producer: routerService.ts (plan generator)
 // Consumer: orchestrator.ts
 
+export interface PlanStep {
+  tool: string;
+  args: Record<string, unknown>;
+}
+
 export interface PlanGeneratedPayload {
-  steps: string[];
+  steps: PlanStep[];
 }
 
 export interface PlanGenerated {

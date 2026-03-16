@@ -1,10 +1,11 @@
 import { Level } from "level";
 import { join } from "path";
+import type { PlanStep } from "../schemas/PlanGenerated";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface PlanState {
-  plan: string[];                    // ordered tool names (the execution plan)
+  plan: PlanStep[];                  // ordered steps with tool name + args
   stepIndex: number;                 // index of the next step to dispatch
   results: Record<string, unknown>[]; // accumulated tool results
   status: "in_progress" | "completed";
@@ -20,8 +21,15 @@ let db: Level<string, string>;
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function initializeStore(): Promise<void> {
+  if (db && db.status === "open") return;
   db = new Level<string, string>(DB_PATH, { valueEncoding: "utf8" });
   await db.open();
+}
+
+export async function closeStore(): Promise<void> {
+  if (db && db.status === "open") {
+    await db.close();
+  }
 }
 
 export async function getPlan(conversationId: string): Promise<PlanState | null> {

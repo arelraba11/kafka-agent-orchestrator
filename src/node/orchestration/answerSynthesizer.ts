@@ -4,10 +4,10 @@ import {
   sendMessage,
   subscribeAndRun,
   registerShutdown,
-} from "../../shared/kafka/client";
-import { TOPICS } from "../../shared/topics";
-import type { PlanCompleted } from "../../shared/schemas/PlanCompleted";
-import type { FinalAnswerSynthesized } from "../../shared/schemas/FinalAnswerSynthesized";
+} from "../../../shared/kafka/client";
+import { TOPICS } from "../../../shared/topics";
+import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
+import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
 
 // ─── Result extraction ────────────────────────────────────────────────────────
 // Each entry in PlanCompleted.payload.results has the shape:

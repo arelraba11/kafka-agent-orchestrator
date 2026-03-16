@@ -4,9 +4,9 @@ import {
   sendMessage,
   subscribeAndRun,
   registerShutdown,
-} from "../../shared/kafka/client";
-import { TOPICS } from "../../shared/topics";
-import type { PlanCompleted } from "../../shared/schemas/PlanCompleted";
+} from "../../../shared/kafka/client";
+import { TOPICS } from "../../../shared/topics";
+import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
 
 // ─── Command type ─────────────────────────────────────────────────────────────
 
