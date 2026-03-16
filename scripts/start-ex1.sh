@@ -5,17 +5,18 @@
 set -e
 cd "$(dirname "$0")/.."
 
-mkdir -p logs
+LOG_DIR="scripts/logs/ex1-services"
+mkdir -p "$LOG_DIR"
 
 export ROUTER_MODE=regex
 
-bun run services/memory-service/memoryService.ts           > logs/memory-service.log 2>&1 &
-bun run services/response-aggregator/responseAggregator.ts > logs/response-aggregator.log 2>&1 &
-bun run services/apps/mathApp.ts                           > logs/math-app.log 2>&1 &
-bun run services/apps/weatherApp.ts                        > logs/weather-app.log 2>&1 &
-bun run services/apps/exchangeApp.ts                       > logs/exchange-app.log 2>&1 &
-bun run services/apps/generalChatApp.ts                    > logs/general-chat-app.log 2>&1 &
-bun run services/router-service/routerService.ts           > logs/router-service.log 2>&1 &
+bun run services/memory-service/memoryService.ts           > "$LOG_DIR/memory-service.log"        2>&1 &
+bun run services/router-service/routerService.ts           > "$LOG_DIR/router-service.log"         2>&1 &
+bun run services/apps/mathApp.ts                           > "$LOG_DIR/math-app.log"               2>&1 &
+bun run services/apps/weatherApp.ts                        > "$LOG_DIR/weather-app.log"            2>&1 &
+bun run services/apps/exchangeApp.ts                       > "$LOG_DIR/exchange-app.log"           2>&1 &
+bun run services/apps/generalChatApp.ts                    > "$LOG_DIR/general-chat-app.log"       2>&1 &
+bun run services/response-aggregator/responseAggregator.ts > "$LOG_DIR/response-aggregator.log"   2>&1 &
 
-echo "Exercise 1 services started (ROUTER_MODE=regex). Logs in logs/"
+echo "Exercise 1 services started (ROUTER_MODE=regex). Logs in $LOG_DIR/"
 echo "Start the UI manually: bun run services/user-interface/userInterface.ts"

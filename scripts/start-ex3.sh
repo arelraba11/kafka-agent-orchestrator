@@ -9,10 +9,11 @@
 set -e
 cd "$(dirname "$0")/.."
 
-mkdir -p logs
+LOG_DIR="scripts/logs/ex3-services"
+mkdir -p "$LOG_DIR"
 
-bun run services/review-analytics/reviewAnalytics.ts > logs/review-analytics.log 2>&1 &
-bun run services/review-processor/reviewProcessor.ts > logs/review-processor.log 2>&1 &
+bun run services/review-processor/reviewProcessor.ts  > "$LOG_DIR/review-processor.log"   2>&1 &
+bun run services/review-analytics/reviewAnalytics.ts  > "$LOG_DIR/review-analytics.log"   2>&1 &
 
-echo "Exercise 3 services started. Logs in logs/"
+echo "Exercise 3 services started. Logs in $LOG_DIR/"
 echo "Start the producer manually: bun run services/review-producer/reviewProducer.ts"

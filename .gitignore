@@ -18,6 +18,7 @@ build/
 # Logs
 *.log
 logs/
+scripts/logs/
 
 # Environment variables
 .env
