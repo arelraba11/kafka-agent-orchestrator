@@ -17,6 +17,8 @@ import type {
   AppResultEvent,
 } from "../../shared/types/events";
 import type { ConversationHistory } from "../../shared/types/conversation";
+import type { UserQueryReceived } from "../../shared/schemas/UserQueryReceived";
+import type { PlanGenerated } from "../../shared/schemas/PlanGenerated";
 
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 
@@ -169,6 +171,43 @@ async function route(
   }
 }
 
+// ─── Plan generation (Final Project) ─────────────────────────────────────────
+// Keyword-based multi-step planner. Rules are evaluated independently so a
+// single query can produce multiple steps (e.g. "weather and exchange rate").
+
+const PLAN_WEATHER_REGEX  = /\b(weather|temperature|forecast|hot|cold|rain|sunny)\b/i;
+const PLAN_EXCHANGE_REGEX = /\b(exchange|convert|USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
+
+function generatePlan(userInput: string): string[] {
+  const steps: string[] = [];
+
+  if (PLAN_WEATHER_REGEX.test(userInput))  steps.push("weather");
+  if (PLAN_EXCHANGE_REGEX.test(userInput)) steps.push("exchange");
+  if (isMathInput(userInput))              steps.push("math");
+
+  if (steps.length === 0) steps.push("chat");
+
+  return steps;
+}
+
+async function routePlan(
+  producer: Awaited<ReturnType<typeof createProducer>>,
+  event: UserQueryReceived
+): Promise<void> {
+  const { conversationId, payload } = event;
+  const steps = generatePlan(payload.userInput);
+
+  const planEvent: PlanGenerated = {
+    conversationId,
+    timestamp: Date.now(),
+    eventType: "PlanGenerated",
+    payload: { steps },
+  };
+
+  await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
+  console.log(`[router] conversationId=${conversationId} plan=[${steps.join(", ")}] input="${payload.userInput}"`);
+}
+
 // ─── Conversation history cache ───────────────────────────────────────────────
 // routerService keeps a local copy of each user's history,
 // updated by conversation-history-update events from memoryService.
@@ -181,8 +220,11 @@ const historyCache: ConversationHistoryCache = {};
 
 const producer = await createProducer();
 const consumer = await createConsumer("router-service");
+const consumerPlan = await createConsumer("router-plan-service");
 
-registerShutdown([producer, consumer]);
+registerShutdown([producer, consumer, consumerPlan]);
+
+// ── Ex1/2 routing (unchanged) ─────────────────────────────────────────────────
 
 await subscribeAndRun(
   consumer,
@@ -200,5 +242,17 @@ await subscribeAndRun(
     }
   }
 );
+
+// ── Final Project: plan generation ───────────────────────────────────────────
+
+subscribeAndRun(
+  consumerPlan,
+  [TOPICS.USER_COMMANDS],
+  async (_topic, _key, value) => {
+    const event = value as UserQueryReceived;
+    if (event.eventType !== "UserQueryReceived") return;
+    await routePlan(producer, event);
+  }
+).catch(err => console.error("[router] Plan consumer error:", err));
 
 console.log("[router] RouterService started.");
