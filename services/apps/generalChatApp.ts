@@ -53,9 +53,41 @@ const FALLBACK_RESPONSES = [
   "I hear you. Let's explore that further.",
 ];
 
+// ─── History-aware memory lookup ──────────────────────────────────────────────
+// Searches past user messages for facts the user stated about themselves.
+
+function lookupFromHistory(userInput: string, history: ConversationHistory): string | null {
+  // "what is my name?" / "what's my name?" / "who am i?"
+  if (/\b(what'?s? (is )?my name|who am i)\b/i.test(userInput)) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (msg.role === "user") {
+        const m = msg.content.match(/\bmy name is (\w+)\b/i);
+        if (m) return `Your name is ${m[1]}.`;
+      }
+    }
+    return "I don't know your name yet. Feel free to tell me!";
+  }
+
+  // "do you remember what I said about X?" / general "remember" queries
+  if (/\bdo you remember\b/i.test(userInput)) {
+    if (history.length > 0) {
+      const lastUser = [...history].reverse().find(m => m.role === "user");
+      if (lastUser) return `The last thing you told me was: "${lastUser.content}"`;
+    }
+    return "I don't have anything stored from our conversation yet.";
+  }
+
+  return null;
+}
+
 // ─── Response generation ──────────────────────────────────────────────────────
 
 function generateResponse(userInput: string, history: ConversationHistory): string {
+  // Check history-aware queries first
+  const memoryResponse = lookupFromHistory(userInput, history);
+  if (memoryResponse) return memoryResponse;
+
   for (const rule of RULES) {
     if (rule.pattern.test(userInput)) {
       return rule.response;

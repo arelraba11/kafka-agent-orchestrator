@@ -22,7 +22,7 @@ const POLITICS_KEYWORDS =
   /\b(politics|politician|election|government|democracy|dictatorship|president|prime minister|coup|regime|propaganda|vote|ballot|senate|congress|parliament)\b/i;
 
 const MALWARE_KEYWORDS =
-  /\b(hack|hacking|malware|virus|ransomware|exploit|zero.?day|sql injection|xss|ddos|botnet|trojan|keylogger|phishing|rootkit|payload|reverse shell|bypass security)\b/i;
+  /\b(hack|hacking|malware|virus|ransomware|exploit|zero.?day|sql injection|xss|ddos|botnet|trojan|keylogger|phishing|rootkit|payload|reverse shell|bypass security|bomb|weapon|explosive|kill|attack|murder|terrorist|terrorism|assassin|poison|grenade|firearm|shooting)\b/i;
 
 function detectViolation(
   input: string

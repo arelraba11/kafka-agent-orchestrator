@@ -21,6 +21,11 @@ TOPICS=(
   # Exercise 3 — Review Analysis Pipeline
   "raw-reviews-topic"
   "processed-insights-topic"
+  # Exercise 4 — Customer Support Analysis Pipeline
+  "raw-customer-messages"
+  "sanitized-messages"
+  "analysis-sentiment"
+  "analysis-urgency"
 )
 
 for TOPIC in "${TOPICS[@]}"; do

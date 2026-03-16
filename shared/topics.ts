@@ -13,15 +13,16 @@ export const TOPICS = {
   // ── Exercise 2 — LLM Prompt Engineering Pipeline ──────────────────────────
   ROUTER_DECISION:            "router-decision-events",
   GUARDRAIL_VIOLATION:        "guardrail-violation-events",
-  LLM_PROMPT_REQUESTS:        "llm-prompt-requests",
-  LLM_RESPONSE_EVENTS:        "llm-response-events",
-  FUNCTION_EXECUTION_REQUESTS:"function-execution-requests",
-  BOT_OUTPUT_EVENTS:          "bot-output-events",
-  COT_MATH_EXPRESSION_EVENTS: "cot-math-expression-events",
 
   // ── Exercise 3 — Review Analysis Pipeline ────────────────────────────────
   RAW_REVIEWS:        "raw-reviews-topic",
   PROCESSED_INSIGHTS: "processed-insights-topic",
+
+  // ── Exercise 4 — Customer Support Analysis Pipeline ───────────────────────
+  RAW_CUSTOMER_MESSAGES: "raw-customer-messages",
+  SANITIZED_MESSAGES:    "sanitized-messages",
+  ANALYSIS_SENTIMENT:    "analysis-sentiment",
+  ANALYSIS_URGENCY:      "analysis-urgency",
 } as const;
 
 export type TopicName = typeof TOPICS[keyof typeof TOPICS];

@@ -20,11 +20,31 @@ import { llmRouterPrompt, llmExtractionPrompt } from "../../shared/prompts/promp
 import type {
   RouterDecisionEvent,
   LLMIntent,
+  IntentMathEvent,
   IntentWeatherEvent,
   IntentExchangeEvent,
   IntentGeneralChatEvent,
   AppResultEvent,
 } from "../../shared/types/events";
+
+// ─── Currency normalisation ───────────────────────────────────────────────────
+// The LLM may return informal names ("euro", "dollars", "shekel").
+// Map them to the ISO codes that exchangeApp understands.
+
+const CURRENCY_ALIASES: Record<string, string> = {
+  eur: "EUR", euro: "EUR", euros: "EUR",
+  usd: "USD", dollar: "USD", dollars: "USD",
+  ils: "ILS", shekel: "ILS", shekels: "ILS",
+  gbp: "GBP", pound: "GBP", pounds: "GBP",
+  jpy: "JPY", yen: "JPY",
+  chf: "CHF", franc: "CHF", francs: "CHF",
+  cad: "CAD", aud: "AUD",
+};
+
+function normalizeCurrency(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== "string") return undefined;
+  return CURRENCY_ALIASES[raw.toLowerCase()] ?? raw.toUpperCase();
+}
 
 // ─── Classification ───────────────────────────────────────────────────────────
 
@@ -76,8 +96,22 @@ async function route(
     return;
   }
 
-  // Math is owned by cot-math-service
+  // Math is owned by cot-math-service, but handle word-form expressions it may miss
   if (intent === "calculateMath") {
+    const expression = parameters.expression as string | undefined;
+    if (!expression) {
+      const match = input.match(/(\d+)\s+(multiplied by|times|multiply)\s+(\d+)/i);
+      if (match) {
+        const mathPayload: IntentMathEvent = {
+          userId,
+          expression: `${match[1]} * ${match[3]}`,
+          timestamp,
+        };
+        console.log(`[llm-router] Word-form math fallback: "${mathPayload.expression}"`);
+        await sendMessage(producer, TOPICS.INTENT_MATH, userId, mathPayload);
+        return;
+      }
+    }
     console.log(`[llm-router] Skipping math intent — delegated to cot-math-service`);
     return;
   }
@@ -97,17 +131,35 @@ async function route(
       break;
     }
     case "currencyExchange": {
-      const currencyCode =
-        (parameters.from as string) ?? (parameters.currencyCode as string) ?? "USD";
-      const targetCurrency =
-        (parameters.to as string) ?? (parameters.targetCurrency as string) ?? "ILS";
-      const payload: IntentExchangeEvent = { userId, currencyCode, targetCurrency, timestamp };
+      const rawFrom = (parameters.from as string) ?? (parameters.currencyCode as string);
+      const rawTo   = (parameters.to   as string) ?? (parameters.targetCurrency as string);
+      // Fallback: scan input text for a currency keyword when LLM omitted "from"
+      let resolvedFrom = normalizeCurrency(rawFrom);
+      if (!resolvedFrom) {
+        const inputLower = input.toLowerCase();
+        for (const [alias, code] of Object.entries(CURRENCY_ALIASES)) {
+          if (new RegExp(`\\b${alias}\\b`).test(inputLower)) {
+            resolvedFrom = code;
+            break;
+          }
+        }
+      }
+      const currencyCode   = resolvedFrom ?? "USD";
+      const targetCurrency = normalizeCurrency(rawTo)    ?? "ILS";
+      const amount =
+        typeof parameters.amount === "number" ? parameters.amount : undefined;
+      const payload: IntentExchangeEvent = { userId, currencyCode, targetCurrency, amount, timestamp };
       await sendMessage(producer, TOPICS.INTENT_EXCHANGE, userId, payload);
       break;
     }
     case "generalChat":
     default: {
-      const payload: IntentGeneralChatEvent = { userId, userInput: input, context: [], timestamp };
+      const payload: IntentGeneralChatEvent = {
+        userId,
+        userInput: input,
+        context: event.context ?? [],   // forward history from router cache
+        timestamp,
+      };
       await sendMessage(producer, TOPICS.INTENT_CHAT, userId, payload);
       break;
     }

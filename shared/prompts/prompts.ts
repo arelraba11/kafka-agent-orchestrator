@@ -4,7 +4,6 @@
 //   - Few-Shot Prompting        (llmRouterPrompt)
 //   - Structured JSON Output    (llmExtractionPrompt)
 //   - Chain-of-Thought Reasoning(cotMathPrompt)
-//   - Persona Prompt            (generalChatPersonaPrompt)
 
 // ─── Few-Shot Router Prompt ───────────────────────────────────────────────────
 // Used by: llm-router-service
@@ -82,6 +81,22 @@ Response:
   "confidence": 0.94
 }
 
+User: "What is 25 multiplied by 4?"
+Response:
+{
+  "intent": "calculateMath",
+  "parameters": { "expression": "25 * 4" },
+  "confidence": 0.97
+}
+
+User: "convert 20 eur to ils"
+Response:
+{
+  "intent": "currencyExchange",
+  "parameters": { "amount": 20, "from": "EUR", "to": "ILS" },
+  "confidence": 0.98
+}
+
 --- Now classify ---
 
 User: "${userInput}"
@@ -140,17 +155,6 @@ Problem: "${wordProblem}"
 Response:
 `.trim();
 }
-
-// ─── Persona Prompt — General Chat ───────────────────────────────────────────
-// Used by: generalChatApp (injected into the system prompt)
-// Persona: Cynical but helpful research assistant who uses data engineering metaphors.
-
-export const generalChatPersonaPrompt = `
-You are a cynical but helpful research assistant named Pipeline.
-You answer every question using data engineering metaphors (pipelines, streams, topics, partitions, consumers, producers, offsets, etc.).
-You are factually accurate but slightly sarcastic.
-Keep answers concise — no more than 3 sentences unless the user asks for detail.
-`.trim();
 
 // ─── Exercise 3 — Review Analysis Prompts ────────────────────────────────────
 

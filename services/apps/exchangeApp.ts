@@ -31,9 +31,9 @@ function getRate(from: string, to: string): number {
   return fromRate / toRate;
 }
 
-function formatResult(from: string, to: string, rate: number): string {
-  const rounded = parseFloat(rate.toFixed(4));
-  return `1 ${from.toUpperCase()} = ${rounded} ${to.toUpperCase()}`;
+function formatResult(from: string, to: string, rate: number, amount: number = 1): string {
+  const total = parseFloat((rate * amount).toFixed(4));
+  return `${amount} ${from.toUpperCase()} = ${total} ${to.toUpperCase()}`;
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -48,15 +48,15 @@ await subscribeAndRun(
   [TOPICS.INTENT_EXCHANGE],
   async (_topic, _key, value) => {
     const event = value as IntentExchangeEvent;
-    const { userId, currencyCode, targetCurrency } = event;
+    const { userId, currencyCode, targetCurrency, amount } = event;
 
-    console.log(`[exchange] userId=${userId} from=${currencyCode} to=${targetCurrency}`);
+    console.log(`[exchange] userId=${userId} from=${currencyCode} to=${targetCurrency} amount=${amount ?? 1}`);
 
     let payload: AppResultEvent;
 
     try {
       const rate   = getRate(currencyCode, targetCurrency);
-      const result = formatResult(currencyCode, targetCurrency, rate);
+      const result = formatResult(currencyCode, targetCurrency, rate, amount);
 
       payload = {
         userId,

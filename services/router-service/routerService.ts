@@ -14,6 +14,7 @@ import type {
   IntentGeneralChatEvent,
   ConversationHistoryUpdateEvent,
   RouterDecisionEvent,
+  AppResultEvent,
 } from "../../shared/types/events";
 import type { ConversationHistory } from "../../shared/types/conversation";
 
@@ -21,17 +22,44 @@ import type { ConversationHistory } from "../../shared/types/conversation";
 
 const ROUTER_MODE = process.env.ROUTER_MODE ?? "regex";
 
+// ─── Guardrail check (mirrors guardrail-service logic) ────────────────────────
+// Running the check inline guarantees routing is blocked before any message
+// reaches downstream services — no race condition with the separate audit service.
+
+const GUARDRAIL_POLITICS =
+  /\b(politics|politician|election|government|democracy|dictatorship|president|prime minister|coup|regime|propaganda|vote|ballot|senate|congress|parliament)\b/i;
+
+const GUARDRAIL_MALWARE =
+  /\b(hack|hacking|malware|virus|ransomware|exploit|zero.?day|sql injection|xss|ddos|botnet|trojan|keylogger|phishing|rootkit|payload|reverse shell|bypass security|bomb|weapon|explosive|kill|attack|murder|terrorist|terrorism|assassin|poison|grenade|firearm|shooting)\b/i;
+
+function getGuardrailViolation(input: string): string | null {
+  if (GUARDRAIL_MALWARE.test(input))
+    return "Input contains potentially malicious content and has been blocked.";
+  if (GUARDRAIL_POLITICS.test(input))
+    return "Input touches political topics which are outside the scope of this system.";
+  return null;
+}
+
 // ─── Intent classification (regex — used in ROUTER_MODE=regex) ────────────────
 
-const MATH_REGEX = /[\d]+\s*[+\-*/]\s*[\d]+/;
+// Matches symbolic expressions AND word-form operators (multiply, times, product)
+const MATH_OPERATOR_REGEX = /[\d]+\s*[+\-*/]\s*[\d]+/;
+const MATH_WORD_REGEX = /\b(multiply|multiplied|times|product)\b/i;
 const WEATHER_REGEX = /\b(weather|temperature|forecast|hot|cold|rain|sunny)\b/i;
 const CURRENCY_REGEX = /\b(USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
 const CITY_REGEX = /\bin\s+([A-Za-z\s]+?)(?:\?|$)/i;
 
+function isMathInput(input: string): boolean {
+  if (MATH_OPERATOR_REGEX.test(input)) return true;
+  // Word-form only counts if there is also a digit in the input
+  if (MATH_WORD_REGEX.test(input) && /\d/.test(input)) return true;
+  return false;
+}
+
 type Intent = "math" | "weather" | "exchange" | "chat";
 
 function regexClassify(input: string): Intent {
-  if (MATH_REGEX.test(input))     return "math";
+  if (isMathInput(input))         return "math";
   if (WEATHER_REGEX.test(input))  return "weather";
   if (CURRENCY_REGEX.test(input)) return "exchange";
   return "chat";
@@ -64,9 +92,29 @@ async function route(
 ): Promise<void> {
   const { userId, userInput, timestamp } = event;
 
+  // ── Guardrail check — block before any routing ────────────────────────────
+  const violation = getGuardrailViolation(userInput);
+  if (violation) {
+    const payload: AppResultEvent = {
+      userId,
+      type: "chat",
+      result: violation,
+      success: true,
+      timestamp,
+    };
+    await sendMessage(producer, TOPICS.APP_RESULTS, userId, payload);
+    console.log(`[router] GUARDRAIL BLOCK userId=${userId} input="${userInput}"`);
+    return;
+  }
+
   // ── LLM mode: forward raw input to llm-router-service + cot-math-service ──
   if (ROUTER_MODE === "llm") {
-    const payload: RouterDecisionEvent = { userId, input: userInput, timestamp };
+    const payload: RouterDecisionEvent = {
+      userId,
+      input: userInput,
+      context: history[userId] ?? [],
+      timestamp,
+    };
     await sendMessage(producer, TOPICS.ROUTER_DECISION, userId, payload);
     console.log(`[router] userId=${userId} mode=llm → published to router-decision-events`);
     return;

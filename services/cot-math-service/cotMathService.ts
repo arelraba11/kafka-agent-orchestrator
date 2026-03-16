@@ -24,9 +24,15 @@ const PURE_EXPRESSION_REGEX = /^\s*[\d\s+\-*/().]+\s*$/;
 
 // Matches math-related inputs including word problems
 const MATH_SIGNAL_REGEX =
-  /[\d]+\s*[+\-*/]\s*[\d]+|\b(plus|minus|times|divided|multiply|subtract|add|sum|total|how many|calculate|compute|apples|oranges|items|dollars|percent|average|difference|product|quotient)\b/i;
+  /[\d]+\s*[+\-*/]\s*[\d]+|\b(plus|minus|times|divided|multiply|subtract|add|sum|total|how many|calculate|compute|apples|oranges|items|percent|average|difference|product|quotient)\b/i;
+
+// Currency exchange messages that contain numbers should NOT be treated as math.
+// "convert 50 dollars to shekels" — "dollars" and digit would otherwise fire MATH_SIGNAL_REGEX.
+const CURRENCY_EXCHANGE_REGEX =
+  /\b(convert|exchange|to\s+(usd|eur|ils|gbp|jpy|chf|cad|aud|dollars?|euros?|shekels?|pounds?|yen|francs?))\b/i;
 
 function isMathInput(input: string): boolean {
+  if (CURRENCY_EXCHANGE_REGEX.test(input)) return false;   // currency, not math
   return MATH_SIGNAL_REGEX.test(input);
 }
 
