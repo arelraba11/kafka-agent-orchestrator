@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ToolInvocationResulted",
+  "description": "Emitted by a tool worker after completing a ToolInvocationRequested. Topic: conversation-events.",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "eventType", "payload"],
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "description": "Unique identifier for the conversation."
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Unix epoch milliseconds at the time the event was produced."
+    },
+    "eventType": {
+      "type": "string",
+      "const": "ToolInvocationResulted",
+      "description": "Discriminator field identifying the event type."
+    },
+    "payload": {
+      "type": "object",
+      "required": ["toolName", "result"],
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "description": "Name of the tool that produced this result. Must match the toolName from the corresponding ToolInvocationRequested."
+        },
+        "result": {
+          "type": "object",
+          "description": "Tool output as a free-form key-value map. Consumers should not assume a fixed shape.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

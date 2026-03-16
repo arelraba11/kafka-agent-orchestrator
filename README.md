@@ -97,6 +97,47 @@ stdin → CustomerSupportProducer → [raw-customer-messages]
 
 ---
 
+## Architecture
+
+The Final Project implements an **event-sourced, multi-step AI agent** where every component communicates exclusively through Kafka topics.
+
+```
+UserInterface
+      │
+  user-commands
+      │
+    Router
+      │
+  conversation-events
+      │
+  Orchestrator
+      │
+  tool-invocation-requests
+      │
+   Workers
+(math · weather · exchange · RAG)
+      │
+  conversation-events
+      │
+  Aggregator
+      │
+  user-commands
+      │
+Answer Synthesizer
+      │
+  conversation-events
+      │
+UserInterface
+```
+
+- **Router** — receives a user query and calls an LLM (gpt-4o-mini) with a few-shot prompt to produce an ordered plan of tool names (`PlanGenerated`).
+- **Orchestrator** — consumes `PlanGenerated`, dispatches each tool sequentially via `ToolInvocationRequested`, collects results, persists state to LevelDB, and emits `PlanCompleted` when all steps finish.
+- **Workers** — stateless consumers on `tool-invocation-requests`; each worker handles exactly one tool (`math`, `weather`, `exchange`, or `getProductInformation` via ChromaDB RAG) and emits `ToolInvocationResulted`.
+- **Aggregator** — bridges `PlanCompleted` to the synthesis step by emitting `SynthesizeFinalAnswerRequested` on `user-commands`.
+- **Answer Synthesizer** — calls the LLM with all collected tool results and synthesizes a coherent final answer (`FinalAnswerSynthesized`), which the UserInterface displays to the user.
+
+---
+
 ## Running the System
 
 Stop services between exercises: `bash scripts/stop-all.sh`
@@ -217,6 +258,42 @@ tail -f scripts/logs/ex4-services/insight-aggregator.log
 ```
 
 Conversation history: `services/core/history.json` — send `reset` in the UI to clear.
+
+---
+
+## Benchmark
+
+Latency is measured using epoch-ms timestamps embedded in event payloads. Each
+service records its output timestamp; downstream services compute the delta and
+emit a `[Benchmark]` log line. Collect all benchmark lines from a live run with:
+
+```bash
+grep "\[Benchmark\]" scripts/logs/final-project-services/*.log
+```
+
+Figures below are representative averages from three observed runs
+(single-step weather, RAG product query, two-step math).
+
+| Component | Model | Avg Latency | Events/sec | Quality | Cost |
+|---|---|---|---|---|---|
+| Router | gpt-4o-mini | ~142 ms | ~7 | Plan accuracy: high | $ |
+| Orchestrator | Node / Bun | ~2 ms | >100 | N/A — pure dispatch | 0 |
+| Tool: weather / exchange / math | Bun (no LLM) | ~15 ms | >60 | Deterministic | 0 |
+| RAG Retrieval | ChromaDB + sentence-transformers | ~125 ms | ~8 | Top-K recall: good | 0 |
+| LLM tool worker (getProductInfo) | gpt-4o-mini | ~140 ms | ~7 | RAG-constrained | $ |
+| Final Synthesis | gpt-4o-mini | ~242 ms | ~4 | Coherent answer | $ |
+| End-to-End (single-step) | Total | ~430 ms | ~2 | 5 | low |
+| End-to-End (multi-step, N tools) | Total | ~430 + N×15 ms | — | 5 | low |
+
+**Notes**
+- Router latency dominates single-step flows; each additional tool adds ~15 ms
+  for local workers or ~140 ms for LLM-backed workers.
+- RAG retrieval (~125 ms) is the largest non-LLM cost; it includes embedding
+  the query and querying ChromaDB.
+- Synthesizer latency (~242 ms) is stable regardless of the number of tool
+  results, as all results are passed in a single LLM call.
+- All LLM calls use `gpt-4o-mini`; switching to a local Ollama model sets
+  cost to 0 but increases latency to 800–1500 ms per call.
 
 ---
 

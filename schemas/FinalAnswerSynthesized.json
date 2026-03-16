@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FinalAnswerSynthesized",
+  "description": "Emitted by answerSynthesizer.ts after the LLM produces the final user-facing answer. Topic: conversation-events.",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "eventType", "payload"],
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "description": "Unique identifier for the conversation."
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Unix epoch milliseconds at the time the event was produced."
+    },
+    "eventType": {
+      "type": "string",
+      "const": "FinalAnswerSynthesized",
+      "description": "Discriminator field identifying the event type."
+    },
+    "payload": {
+      "type": "object",
+      "required": ["answer"],
+      "properties": {
+        "answer": {
+          "type": "string",
+          "description": "The synthesized, user-facing answer combining all tool results.",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

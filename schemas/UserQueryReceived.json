@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UserQueryReceived",
+  "description": "Emitted by userInterface.ts when the user submits a query. Topic: user-commands.",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "eventType", "payload"],
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "description": "Unique identifier for the conversation, shared across all events in one request."
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Unix epoch milliseconds at the time the event was produced."
+    },
+    "eventType": {
+      "type": "string",
+      "const": "UserQueryReceived",
+      "description": "Discriminator field identifying the event type."
+    },
+    "payload": {
+      "type": "object",
+      "required": ["userInput"],
+      "properties": {
+        "userInput": {
+          "type": "string",
+          "description": "The raw text query entered by the user.",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
