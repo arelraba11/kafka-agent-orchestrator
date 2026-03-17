@@ -18,7 +18,7 @@ import type {
 } from "../../../shared/types/events";
 import type { ConversationHistory } from "../../../shared/types/conversation";
 import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
-import type { PlanGenerated } from "../../../shared/schemas/PlanGenerated";
+import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
 
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 
@@ -178,15 +178,38 @@ async function route(
 
 const PLAN_WEATHER_REGEX  = /\b(weather|temperature|forecast|hot|cold|rain|sunny)\b/i;
 const PLAN_EXCHANGE_REGEX = /\b(exchange|convert|USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
+const EXTRACT_CURRENCIES  = /\b(USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/gi;
+const EXTRACT_AMOUNT      = /\b(\d+(?:\.\d+)?)\s+(?:USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
 
-function generatePlan(userInput: string): string[] {
-  const steps: string[] = [];
+function generatePlan(userInput: string): PlanStep[] {
+  const steps: PlanStep[] = [];
 
-  if (PLAN_WEATHER_REGEX.test(userInput))  steps.push("weather");
-  if (PLAN_EXCHANGE_REGEX.test(userInput)) steps.push("exchange");
-  if (isMathInput(userInput))              steps.push("math");
+  if (PLAN_WEATHER_REGEX.test(userInput)) {
+    const cityMatch = userInput.match(CITY_REGEX);
+    const city = cityMatch ? cityMatch[1].trim() : "Tel Aviv";
+    steps.push({ tool: "weather", args: { city } });
+  }
 
-  if (steps.length === 0) steps.push("chat");
+  if (PLAN_EXCHANGE_REGEX.test(userInput)) {
+    const currencies = Array.from(userInput.matchAll(EXTRACT_CURRENCIES)).map(m => m[0].toUpperCase());
+    const amountMatch = userInput.match(EXTRACT_AMOUNT);
+    steps.push({
+      tool: "exchange",
+      args: {
+        currencyCode:   currencies[0] ?? "USD",
+        targetCurrency: currencies[1] ?? "ILS",
+        amount: amountMatch ? parseFloat(amountMatch[1]) : 1,
+      },
+    });
+  }
+
+  if (isMathInput(userInput)) {
+    steps.push({ tool: "math", args: { expression: extractExpression(userInput) } });
+  }
+
+  if (steps.length === 0) {
+    steps.push({ tool: "chat", args: { userInput } });
+  }
 
   return steps;
 }
@@ -202,13 +225,13 @@ async function routePlan(
     conversationId,
     timestamp: Date.now(),
     eventType: "PlanGenerated",
-    payload: { steps, userInput: payload.userInput },
+    payload: { steps },
   };
 
   await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
 
   const routerLatency = Date.now() - event.timestamp;
-  console.log(`[router] conversationId=${conversationId} plan=[${steps.join(", ")}] input="${payload.userInput}"`);
+  console.log(`[router] conversationId=${conversationId} plan=[${steps.map(s => s.tool).join(", ")}] input="${payload.userInput}"`);
   console.log(`[Benchmark] conversationId=${conversationId} routerLatency=${routerLatency}ms`);
 }
 

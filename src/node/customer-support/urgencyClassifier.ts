@@ -5,7 +5,7 @@
  * using gpt-4o-mini via the shared OpenAI client.
  *
  * Usage:
- *   bun run services/urgency-classifier/urgencyClassifier.ts
+ *   bun run src/node/customer-support/urgencyClassifier.ts
  *
  * Topics:
  *   IN  ← sanitized-messages     (group: urgency-group)
@@ -21,7 +21,7 @@ import {
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { callLLM } from "../../../shared/llm/openai";
-import { urgencyPrompt } from "../../../prompts/customerSupportPrompts";
+import { urgencyPrompt } from "../../../shared/prompts/customerSupportPrompts";
 import type {
   SanitizedMessage,
   UrgencyLabel,

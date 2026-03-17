@@ -13,7 +13,7 @@
 import { callLLM as generateText } from "../../../shared/llm/openai";
 import { createProducer, createConsumer } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import { reviewRouterPrompt, reviewAnalyzerPrompt, selfCorrectionPrompt } from "../../../prompts/prompts";
+import { reviewRouterPrompt, reviewAnalyzerPrompt, selfCorrectionPrompt } from "../../../shared/prompts/prompts";
 import type { ReviewEvent, RouterDecision, AnalysisResult, ReviewInsightEvent } from "../../../shared/types/reviews";
 
 const GROUP_ID = process.env.PROCESSOR_GROUP_ID ?? "review-processor-group";

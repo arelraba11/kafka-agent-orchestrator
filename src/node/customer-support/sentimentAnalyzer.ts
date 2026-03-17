@@ -5,7 +5,7 @@
  * using gpt-4o-mini via the shared OpenAI client.
  *
  * Usage:
- *   bun run services/sentiment-analyzer/sentimentAnalyzer.ts
+ *   bun run src/node/customer-support/sentimentAnalyzer.ts
  *
  * Topics:
  *   IN  ← sanitized-messages     (group: sentiment-group)
@@ -21,7 +21,7 @@ import {
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { callLLM } from "../../../shared/llm/openai";
-import { sentimentPrompt } from "../../../prompts/customerSupportPrompts";
+import { sentimentPrompt } from "../../../shared/prompts/customerSupportPrompts";
 import type { SanitizedMessage, SentimentResult } from "../../../shared/types/customerSupport";
 
 async function main(): Promise<void> {

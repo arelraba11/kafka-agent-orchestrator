@@ -17,61 +17,23 @@ import {
   updatePlan,
   deletePlan,
 } from "../../../shared/state/planStore";
-
-// ─── Per-tool input extraction ────────────────────────────────────────────────
-// Extracts the relevant parameters from the raw user query for each tool type.
-// Workers already have fallback defaults; these provide the actual user intent.
-
-const EXTRACT_MATH_EXPR    = /\d+[\s\d+\-*/().]+/;
-const EXTRACT_CITY         = /\bin\s+([A-Za-z][A-Za-z\s]*?)(?=\s+and\b|\?|$)/i;
-const EXTRACT_CURRENCIES   = /\b(USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/gi;
-const EXTRACT_AMOUNT       = /\b(\d+(?:\.\d+)?)\s+(?:USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
-
-function buildToolInput(toolName: string, userInput: string): Record<string, unknown> {
-  switch (toolName) {
-    case "math": {
-      const match = userInput.match(EXTRACT_MATH_EXPR);
-      const expression = match ? match[0].trim() : userInput;
-      console.log(`[orchestrator] math expression extracted: "${expression}"`);
-      return { expression };
-    }
-    case "weather": {
-      const match = userInput.match(EXTRACT_CITY);
-      const city = match ? match[1].trim() : "Tel Aviv";
-      return { city };
-    }
-    case "exchange": {
-      const currencies = Array.from(userInput.matchAll(EXTRACT_CURRENCIES)).map(m => m[0].toUpperCase());
-      const amountMatch = userInput.match(EXTRACT_AMOUNT);
-      return {
-        currencyCode:   currencies[0] ?? "USD",
-        targetCurrency: currencies[1] ?? "ILS",
-        amount: amountMatch ? parseFloat(amountMatch[1]) : 1,
-      };
-    }
-    case "chat":
-      return { userInput };
-    default:
-      return {};
-  }
-}
+import type { PlanStep } from "../../../shared/schemas/PlanGenerated";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function dispatchStep(
   producer: Awaited<ReturnType<typeof createProducer>>,
   conversationId: string,
-  toolName: string,
-  userInput: string
+  step: PlanStep
 ): Promise<void> {
   const event: ToolInvocationRequested = {
     conversationId,
     timestamp: Date.now(),
     eventType: "ToolInvocationRequested",
-    payload: { toolName, input: buildToolInput(toolName, userInput) },
+    payload: { toolName: step.tool, input: step.args },
   };
   await sendMessage(producer, TOPICS.TOOL_INVOCATION_REQUESTS, conversationId, event);
-  console.log(`[orchestrator] conversationId=${conversationId} dispatching tool="${toolName}"`);
+  console.log(`[orchestrator] conversationId=${conversationId} dispatching tool="${step.tool}"`);
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -81,7 +43,7 @@ async function onPlanGenerated(
   event: PlanGenerated
 ): Promise<void> {
   const { conversationId, payload } = event;
-  const { steps, userInput = "" } = payload;
+  const { steps } = payload;
 
   await savePlan(conversationId, {
     plan: steps,
@@ -89,11 +51,10 @@ async function onPlanGenerated(
     results: [],
     status: "in_progress",
     planReceivedAt: Date.now(),
-    userInput,
   });
-  console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.join(", ")}]`);
+  console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.map(s => s.tool).join(", ")}]`);
 
-  await dispatchStep(producer, conversationId, steps[0], userInput);
+  await dispatchStep(producer, conversationId, steps[0]);
 }
 
 async function onToolInvocationResulted(
@@ -116,8 +77,7 @@ async function onToolInvocationResulted(
   console.log(`[orchestrator] conversationId=${conversationId} step ${updatedStepIndex}/${state.plan.length} completed tool="${payload.toolName}"`);
 
   if (updatedStepIndex < state.plan.length) {
-    // More steps to execute — pass userInput so next tool gets the right params
-    await dispatchStep(producer, conversationId, state.plan[updatedStepIndex], state.userInput ?? "");
+    await dispatchStep(producer, conversationId, state.plan[updatedStepIndex]);
     return;
   }
 

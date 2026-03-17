@@ -6,7 +6,7 @@
  * Emits a strong alert or normal log once both branches arrive.
  *
  * Usage:
- *   bun run services/insight-aggregator/insightAggregator.ts
+ *   bun run src/node/customer-support/insightAggregator.ts
  *
  * Topics:
  *   IN ← analysis-sentiment   (group: insight-aggregator-group)

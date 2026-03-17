@@ -1,7 +1,7 @@
 // reviewProducer.ts — CLI fire-and-forget review producer
 //
 // Usage:
-//   bun run services/review-producer/reviewProducer.ts
+//   bun run src/node/reviews/reviewProducer.ts
 //   Type a review and press Enter. Ctrl+C to exit.
 //
 // Each line of stdin is wrapped in a ReviewEvent and sent to raw-reviews-topic.

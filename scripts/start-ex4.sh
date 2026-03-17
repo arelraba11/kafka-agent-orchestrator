@@ -5,7 +5,7 @@
 # Starts the sanitizer, sentiment analyzer, urgency classifier, and
 # insight aggregator in the background.
 # Run the producer separately (it is interactive):
-#   bun run services/customer-support-producer/customerSupportProducer.ts
+#   bun run src/node/customer-support/customerSupportProducer.ts
 #
 # Requirements:
 #   - OPENAI_API_KEY set in the environment (sentimentAnalyzer, urgencyClassifier)
@@ -17,10 +17,10 @@ cd "$(dirname "$0")/.."
 LOG_DIR="scripts/logs/ex4-services"
 mkdir -p "$LOG_DIR"
 
-bun run services/customer-support/sanitizerService.ts      > "$LOG_DIR/sanitizer-service.log"    2>&1 &
-bun run services/customer-support/sentimentAnalyzer.ts     > "$LOG_DIR/sentiment-analyzer.log"   2>&1 &
-bun run services/customer-support/urgencyClassifier.ts     > "$LOG_DIR/urgency-classifier.log"   2>&1 &
-bun run services/customer-support/insightAggregator.ts     > "$LOG_DIR/insight-aggregator.log"   2>&1 &
+bun run src/node/customer-support/sanitizerService.ts      > "$LOG_DIR/sanitizer-service.log"    2>&1 &
+bun run src/node/customer-support/sentimentAnalyzer.ts     > "$LOG_DIR/sentiment-analyzer.log"   2>&1 &
+bun run src/node/customer-support/urgencyClassifier.ts     > "$LOG_DIR/urgency-classifier.log"   2>&1 &
+bun run src/node/customer-support/insightAggregator.ts     > "$LOG_DIR/insight-aggregator.log"   2>&1 &
 
 echo "Exercise 4 services started. Logs in $LOG_DIR/"
-echo "Start the producer manually: bun run services/customer-support/customerSupportProducer.ts"
+echo "Start the producer manually: bun run src/node/customer-support/customerSupportProducer.ts"

@@ -5,7 +5,7 @@
  * and publishes sanitized messages downstream.
  *
  * Usage:
- *   bun run services/sanitizer-service/sanitizerService.ts
+ *   bun run src/node/customer-support/sanitizerService.ts
  *
  * Topics:
  *   IN  ← raw-customer-messages  (group: sanitizer-group)
@@ -18,7 +18,7 @@
 
 import { createProducer, createConsumer, sendMessage, registerShutdown } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import { buildSanitizePrompt } from "../../../prompts/customerSupportPrompts";
+import { buildSanitizePrompt } from "../../../shared/prompts/customerSupportPrompts";
 import type { RawMessage, SanitizedMessage } from "../../../shared/types/customerSupport";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";

@@ -5,8 +5,8 @@
  * the raw-customer-messages Kafka topic.
  *
  * Usage:
- *   bun run services/customer-support-producer/customerSupportProducer.ts
- *   bun run services/customer-support-producer/customerSupportProducer.ts "Jane called 555-1234"
+ *   bun run src/node/customer-support/customerSupportProducer.ts
+ *   bun run src/node/customer-support/customerSupportProducer.ts "Jane called 555-1234"
  *
  * Topics:
  *   OUT → raw-customer-messages

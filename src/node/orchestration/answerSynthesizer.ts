@@ -6,50 +6,28 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
+import { callLLM } from "../../../shared/llm/openai";
+import { synthesisPrompt } from "../../../shared/prompts/synthesisPrompt";
+import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
 
-// ─── Result extraction ────────────────────────────────────────────────────────
-// Each entry in PlanCompleted.payload.results has the shape:
-//   { toolName: string, result: { value: string, success: boolean, ... } }
-// This matches what orchestrator.ts pushes after each ToolInvocationResulted.
+// ─── Command type (emitted by Aggregator to user-commands) ────────────────────
 
-interface ToolResult {
-  toolName: string;
-  result: Record<string, unknown>;
+interface SynthesizeFinalAnswerRequested {
+  conversationId: string;
+  timestamp: number;
+  commandType: "SynthesizeFinalAnswerRequested";
+  payload: {
+    results: Record<string, unknown>[];
+  };
 }
 
-function extractAnswer(results: Record<string, unknown>[]): string {
-  const lines: string[] = [];
+// ─── User query cache ─────────────────────────────────────────────────────────
+// user-commands carries both UserQueryReceived and SynthesizeFinalAnswerRequested.
+// We cache userInput by conversationId so the synthesizer can include the
+// original question in the LLM prompt.
 
-  for (const item of results) {
-    const { toolName, result } = item as unknown as ToolResult;
-    const value = result.value as string | undefined;
-
-    if (!value) continue;
-
-    switch (toolName) {
-      case "weather":
-        lines.push(`Weather: ${value}`);
-        break;
-      case "exchange":
-        lines.push(`Exchange: ${value}`);
-        break;
-      case "math":
-        lines.push(`Result: ${value}`);
-        break;
-      case "chat":
-        lines.push(value);
-        break;
-      default:
-        lines.push(`[${toolName}] ${value}`);
-    }
-  }
-
-  return lines.length > 0
-    ? lines.join("\n")
-    : "I was unable to process your request.";
-}
+const userQueryCache = new Map<string, string>();
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -60,17 +38,36 @@ registerShutdown([producer, consumer]);
 
 await subscribeAndRun(
   consumer,
-  [TOPICS.CONVERSATION_EVENTS],
+  [TOPICS.USER_COMMANDS],
   async (_topic, _key, value) => {
-    const event = value as { eventType: string };
-    if (event.eventType !== "PlanCompleted") return;
+    const event = value as { commandType?: string; eventType?: string };
 
-    const planCompleted = event as PlanCompleted;
-    const { conversationId, timestamp: planCompletedAt, payload } = planCompleted;
+    // Cache user queries as they arrive on user-commands
+    if (event.eventType === "UserQueryReceived") {
+      const q = event as UserQueryReceived;
+      userQueryCache.set(q.conversationId, q.payload.userInput);
+      return;
+    }
+
+    if (event.commandType !== "SynthesizeFinalAnswerRequested") return;
+
+    const command = event as SynthesizeFinalAnswerRequested;
+    const { conversationId, timestamp: planCompletedAt, payload } = command;
 
     console.log(`[synthesizer] conversationId=${conversationId} results=${payload.results.length}`);
 
-    const answer = extractAnswer(payload.results);
+    const userQuery = userQueryCache.get(conversationId) ?? "";
+    userQueryCache.delete(conversationId);
+
+    const toolResults = payload.results.map((r) => {
+      const item = r as { toolName: string; result: Record<string, unknown> };
+      return {
+        tool: item.toolName,
+        result: String(item.result.value ?? JSON.stringify(item.result)),
+      };
+    });
+
+    const answer = await callLLM(synthesisPrompt(userQuery, toolResults));
 
     const finalEvent: FinalAnswerSynthesized = {
       conversationId,

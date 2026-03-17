@@ -16,7 +16,7 @@ import {
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { callLLM } from "../../../shared/llm/openai";
-import { llmRouterPrompt, llmExtractionPrompt } from "../../../prompts/prompts";
+import { llmRouterPrompt, llmExtractionPrompt } from "../../../shared/prompts/prompts";
 import type {
   RouterDecisionEvent,
   LLMIntent,

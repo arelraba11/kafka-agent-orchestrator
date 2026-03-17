@@ -14,7 +14,7 @@ import {
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { callLLM } from "../../../shared/llm/openai";
-import { cotMathPrompt } from "../../../prompts/prompts";
+import { cotMathPrompt } from "../../../shared/prompts/prompts";
 import type { RouterDecisionEvent, IntentMathEvent } from "../../../shared/types/events";
 
 // ─── Heuristics ───────────────────────────────────────────────────────────────

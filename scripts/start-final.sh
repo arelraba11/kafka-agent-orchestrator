@@ -49,6 +49,10 @@ bun run src/node/orchestration/orchestrator.ts          > "$LOG_DIR/orchestrator
 echo "Started orchestrator (PID $!)"
 sleep 1
 
+bun run src/node/orchestration/aggregator.ts            > "$LOG_DIR/aggregator.log"   2>&1 &
+echo "Started aggregator (PID $!)"
+sleep 1
+
 bun run src/node/apps/mathApp.ts                        > "$LOG_DIR/math.log"         2>&1 &
 echo "Started mathApp (PID $!)"
 sleep 1
