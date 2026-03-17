@@ -1,316 +1,120 @@
-Execution Logs — Kafka AI Agent (Final Project)
-================================================
+Execution Log — Kafka Event-Sourced AI Agent
 
-Three example orchestration runs captured from live service logs.
-Timestamps follow ISO-8601. ConversationIds are abbreviated for readability.
+---
 
-Log files live in: scripts/logs/final-project-services/
+## Scenario 1 — Weather + Exchange
 
-================================================================================
-Scenario 1 — Weather + Currency Conversion
-================================================================================
+Query: what's the weather in tel aviv and convert 100 usd to ils
+Conversation ID: 20a59361-f3a5-4375-ab20-7c104caaa13e
 
-User input
-----------
-    weather in tel aviv and convert 100 usd to ils
+Router:       plan=[weather, exchange]  routerLatency=16ms
+Orchestrator: dispatching weather → step 1/2 complete
+              dispatching exchange → step 2/2 complete  workerLatency=24ms
 
-Expected plan
--------------
-    { "steps": ["weather", "exchange"] }
+Weather:  city="Tel Aviv"  result="Weather in Tel Aviv is 28°C and sunny."
+Exchange: 100 USD = 370 ILS
 
---------------------------------------------------------------------------------
-[2026-03-16T09:12:00.101Z] [userInterface]  UserQueryReceived
-    conversationId = conv-a1b2
-    query          = "weather in tel aviv and convert 100 usd to ils"
-    topic          → user-commands
+Answer:
+  The weather in Tel Aviv is currently 28°C and sunny.
+  100 USD is equivalent to 370 ILS.
 
-[2026-03-16T09:12:00.245Z] [router]         PlanGenerated
-    conversationId = conv-a1b2
-    steps          = ["weather", "exchange"]
-    routerLatency  = 144ms
-    topic          → conversation-events
+synthesizerLatency=2204ms
 
-[2026-03-16T09:12:00.251Z] [orchestrator]   plan received
-    conversationId = conv-a1b2
-    steps          = [weather, exchange]
-    stepIndex      = 0
+---
 
-[2026-03-16T09:12:00.253Z] [orchestrator]   ToolInvocationRequested  (step 1/2)
-    conversationId = conv-a1b2
-    tool           = "weather"
-    parameters     = { "city": "tel aviv" }
-    topic          → tool-invocation-requests
+## Scenario 2 — Math + Weather
 
-[2026-03-16T09:12:00.261Z] [weatherApp]     processing tool request
-    conversationId = conv-a1b2
-    city           = "tel aviv"
-    result         = "The weather in Tel Aviv is 28°C and Sunny."
+Query: what is 25 * 8 and what is the weather in paris
+Conversation ID: 73088872-47f3-4fd7-a34b-bc4421e29b00
 
-[2026-03-16T09:12:00.263Z] [weatherApp]     ToolInvocationResulted
-    conversationId = conv-a1b2
-    stepIndex      = 0
-    result         = "The weather in Tel Aviv is 28°C and Sunny."
-    topic          → conversation-events
+Router:       plan=[weather, math]  routerLatency=5ms
+Orchestrator: dispatching weather → step 1/2 complete
+              dispatching math    → step 2/2 complete  workerLatency=10ms
 
-[2026-03-16T09:12:00.271Z] [orchestrator]   step 1/2 completed
-    conversationId = conv-a1b2
-    tool           = "weather"
-    toolLatency    = 18ms
+Weather: Weather in Paris is 17°C and overcast.
+Math:    25 * 8 = 200
 
-[2026-03-16T09:12:00.272Z] [orchestrator]   ToolInvocationRequested  (step 2/2)
-    conversationId = conv-a1b2
-    tool           = "exchange"
-    parameters     = { "from": "USD", "to": "ILS", "amount": 100 }
-    topic          → tool-invocation-requests
+Answer:
+  The result of 25 multiplied by 8 is 200.
+  The weather in Paris is 17°C and overcast.
 
-[2026-03-16T09:12:00.278Z] [exchangeApp]    processing tool request
-    conversationId = conv-a1b2
-    from=USD to=ILS amount=100
-    result         = "100 USD = 370.00 ILS"
+synthesizerLatency=1035ms
 
-[2026-03-16T09:12:00.280Z] [exchangeApp]    ToolInvocationResulted
-    conversationId = conv-a1b2
-    stepIndex      = 1
-    result         = "100 USD = 370.00 ILS"
-    topic          → conversation-events
+---
 
-[2026-03-16T09:12:00.288Z] [orchestrator]   step 2/2 completed
-    conversationId = conv-a1b2
-    tool           = "exchange"
-    toolLatency    = 16ms
+## Scenario 3 — Chat + Exchange
 
-[2026-03-16T09:12:00.289Z] [orchestrator]   PlanCompleted
-    conversationId = conv-a1b2
-    results        = 2
-    topic          → conversation-events
+Query: hello, and also convert 50 eur to usd
+Conversation ID: 05f66db1-3c17-42e1-afc8-d2c700c7db5b
 
-[2026-03-16T09:12:00.291Z] [aggregator]     SynthesizeFinalAnswerRequested
-    conversationId = conv-a1b2
-    results        = ["The weather in Tel Aviv is 28°C and Sunny.", "100 USD = 370.00 ILS"]
-    topic          → user-commands
+Router: plan=[chat, exchange]  routerLatency=11ms
+Exchange: 50 EUR = 54.0541 USD
 
-[2026-03-16T09:12:00.531Z] [answerSynthesizer]  FinalAnswerSynthesized
-    conversationId   = conv-a1b2
-    synthesizerLatency = 240ms
-    answer           =
-        "The weather in Tel Aviv is currently 28°C and Sunny.
-         Additionally, 100 USD equals 370.00 ILS at today's rate."
-    topic            → conversation-events
+Answer:
+  Hello!
+  50 euros equals approximately 54.05 USD.
 
-[2026-03-16T09:12:00.538Z] [userInterface]  displaying answer to user
+synthesizerLatency=1270ms
 
-[Benchmark] conv-a1b2  routerLatency=144ms  toolLatency(weather)=18ms  toolLatency(exchange)=16ms  synthesizerLatency=240ms  end-to-end=437ms
+---
 
---------------------------------------------------------------------------------
-UI output:
-    bot: The weather in Tel Aviv is currently 28°C and Sunny.
-         Additionally, 100 USD equals 370.00 ILS at today's rate.
+## RAG Scenario 1 — Tesla Product Information
 
-================================================================================
-Scenario 2 — Product Information (RAG)
-================================================================================
+Query: tell me about the tesla model 3
+Conversation ID: d35ebcdc-8036-4c23-ad64-f205d5aeb57f
 
-User input
-----------
-    what is the battery life of the macbook pro?
+Router: plan=[chat]  routerLatency=6ms
+Worker: retrieved knowledge about Tesla Model 3
 
-Expected plan
--------------
-    { "steps": ["getProductInformation"] }
+Answer:
+  Summary covering Tesla Model 3 electric vehicle — performance, range, autopilot.
 
---------------------------------------------------------------------------------
-[2026-03-16T09:14:10.050Z] [userInterface]  UserQueryReceived
-    conversationId = conv-c3d4
-    query          = "what is the battery life of the macbook pro?"
-    topic          → user-commands
+synthesizerLatency=3466ms
 
-[2026-03-16T09:14:10.193Z] [router]         PlanGenerated
-    conversationId = conv-c3d4
-    steps          = ["getProductInformation"]
-    routerLatency  = 143ms
-    topic          → conversation-events
+---
 
-[2026-03-16T09:14:10.199Z] [orchestrator]   plan received
-    conversationId = conv-c3d4
-    steps          = [getProductInformation]
-    stepIndex      = 0
+## RAG Scenario 2 — MacBook Product Information
 
-[2026-03-16T09:14:10.200Z] [orchestrator]   ToolInvocationRequested  (step 1/1)
-    conversationId = conv-c3d4
-    tool           = "getProductInformation"
-    parameters     = { "product": "macbook", "query": "battery life" }
-    topic          → tool-invocation-requests
+Query: what can you tell me about the macbook
+Conversation ID: 97d1bd03-fa86-4636-b253-0e6fede127fe
 
-[2026-03-16T09:14:10.212Z] [ragRetriever]   received tool request
-    conversationId = conv-c3d4
-    product        = "macbook"
-    querying ChromaDB with embedding for "battery life macbook pro"
+Router: plan=[chat]  routerLatency=6ms
+Worker: retrieved product knowledge about MacBook
 
-[2026-03-16T09:14:10.334Z] [ragRetriever]   ChromaDB query complete
-    conversationId = conv-c3d4
-    chromaLatency  = 122ms
-    topK           = 3 chunks retrieved from macbook.txt
-    context excerpt = "MacBook Pro with M3 chip delivers up to 22 hours of battery
-                       life on a single charge. The M2 MacBook Air achieves up to
-                       18 hours. MagSafe charging returns from 0 to 50% in 30 min."
+Answer:
+  Summary covering MacBook Air, MacBook Pro, macOS ecosystem, hardware performance.
 
-[2026-03-16T09:14:10.336Z] [ragRetriever]   ToolInvocationResulted
-    conversationId = conv-c3d4
-    stepIndex      = 0
-    result         = "MacBook Pro (M3): up to 22 hours battery. MacBook Air (M2): up to 18 hours."
-    topic          → conversation-events
+synthesizerLatency=3085ms
 
-[2026-03-16T09:14:10.341Z] [orchestrator]   step 1/1 completed
-    conversationId = conv-c3d4
-    tool           = "getProductInformation"
-    toolLatency    = 141ms
+---
 
-[2026-03-16T09:14:10.342Z] [orchestrator]   PlanCompleted
-    conversationId = conv-c3d4
-    results        = 1
-    topic          → conversation-events
+## Resilience Scenario — Worker Crash and Recovery
 
-[2026-03-16T09:14:10.345Z] [aggregator]     SynthesizeFinalAnswerRequested
-    conversationId = conv-c3d4
-    results        = ["MacBook Pro (M3): up to 22 hours battery. MacBook Air (M2): up to 18 hours."]
-    topic          → user-commands
+Failure: pkill -f mathApp  (math worker process terminated)
 
-[2026-03-16T09:14:10.589Z] [answerSynthesizer]  FinalAnswerSynthesized
-    conversationId   = conv-c3d4
-    synthesizerLatency = 244ms
-    answer           =
-        "The MacBook Pro with M3 chip offers up to 22 hours of battery life,
-         while the MacBook Air (M2) provides up to 18 hours on a single charge."
-    topic            → conversation-events
+Recovery: bun run src/node/apps/mathApp.ts
+          groupId=math-tool-worker → Consumer has joined the group
 
-[2026-03-16T09:14:10.594Z] [userInterface]  displaying answer to user
+Query: what is 12 * 9
+Conversation ID: 81413296-9482-4bc9-ada2-17a0c788cb42
 
-[Benchmark] conv-c3d4  routerLatency=143ms  toolLatency(getProductInformation)=141ms  chromaLatency=122ms  synthesizerLatency=244ms  end-to-end=544ms
+Orchestrator: dispatching math → step complete  plan completed
+Math worker:  12 * 9 = 108
 
---------------------------------------------------------------------------------
-UI output:
-    bot: The MacBook Pro with M3 chip offers up to 22 hours of battery life,
-         while the MacBook Air (M2) provides up to 18 hours on a single charge.
+Answer:
+  The result of 12 multiplied by 9 is 108.
 
-================================================================================
-Scenario 3 — Multi-Step Math Reasoning
-================================================================================
+synthesizerLatency=1508ms
 
-User input
-----------
-    what is (45 + 55) * 3 and then divide that result by 10?
+---
 
-Expected plan
--------------
-    { "steps": ["math", "math"] }
+## Summary
 
---------------------------------------------------------------------------------
-[2026-03-16T09:16:05.300Z] [userInterface]  UserQueryReceived
-    conversationId = conv-e5f6
-    query          = "what is (45 + 55) * 3 and then divide that result by 10?"
-    topic          → user-commands
-
-[2026-03-16T09:16:05.441Z] [router]         PlanGenerated
-    conversationId = conv-e5f6
-    steps          = ["math", "math"]
-    parameters     = [{ "expression": "(45 + 55) * 3" }, { "expression": "$step1 / 10" }]
-    routerLatency  = 141ms
-    topic          → conversation-events
-
-[2026-03-16T09:16:05.447Z] [orchestrator]   plan received
-    conversationId = conv-e5f6
-    steps          = [math, math]
-    stepIndex      = 0
-
-[2026-03-16T09:16:05.448Z] [orchestrator]   ToolInvocationRequested  (step 1/2)
-    conversationId = conv-e5f6
-    tool           = "math"
-    parameters     = { "expression": "(45 + 55) * 3" }
-    topic          → tool-invocation-requests
-
-[2026-03-16T09:16:05.453Z] [mathApp]        processing tool request
-    conversationId = conv-e5f6
-    expression     = "(45 + 55) * 3"
-    parsed via recursive descent parser
-    result         = 300
-
-[2026-03-16T09:16:05.455Z] [mathApp]        ToolInvocationResulted
-    conversationId = conv-e5f6
-    stepIndex      = 0
-    result         = "300"
-    topic          → conversation-events
-
-[2026-03-16T09:16:05.460Z] [orchestrator]   step 1/2 completed
-    conversationId = conv-e5f6
-    tool           = "math"
-    toolLatency    = 12ms
-    injecting step1 result into step2 parameters
-
-[2026-03-16T09:16:05.461Z] [orchestrator]   ToolInvocationRequested  (step 2/2)
-    conversationId = conv-e5f6
-    tool           = "math"
-    parameters     = { "expression": "300 / 10" }
-    topic          → tool-invocation-requests
-
-[2026-03-16T09:16:05.466Z] [mathApp]        processing tool request
-    conversationId = conv-e5f6
-    expression     = "300 / 10"
-    result         = 30
-
-[2026-03-16T09:16:05.468Z] [mathApp]        ToolInvocationResulted
-    conversationId = conv-e5f6
-    stepIndex      = 1
-    result         = "30"
-    topic          → conversation-events
-
-[2026-03-16T09:16:05.473Z] [orchestrator]   step 2/2 completed
-    conversationId = conv-e5f6
-    tool           = "math"
-    toolLatency    = 12ms
-
-[2026-03-16T09:16:05.474Z] [orchestrator]   PlanCompleted
-    conversationId = conv-e5f6
-    results        = 2
-    topic          → conversation-events
-
-[2026-03-16T09:16:05.477Z] [aggregator]     SynthesizeFinalAnswerRequested
-    conversationId = conv-e5f6
-    results        = ["300", "30"]
-    topic          → user-commands
-
-[2026-03-16T09:16:05.718Z] [answerSynthesizer]  FinalAnswerSynthesized
-    conversationId   = conv-e5f6
-    synthesizerLatency = 241ms
-    answer           =
-        "Step 1: (45 + 55) × 3 = 300
-         Step 2: 300 ÷ 10 = 30
-         The final result is 30."
-    topic            → conversation-events
-
-[2026-03-16T09:16:05.724Z] [userInterface]  displaying answer to user
-
-[Benchmark] conv-e5f6  routerLatency=141ms  toolLatency(math-1)=12ms  toolLatency(math-2)=12ms  synthesizerLatency=241ms  end-to-end=424ms
-
---------------------------------------------------------------------------------
-UI output:
-    bot: Step 1: (45 + 55) × 3 = 300
-         Step 2: 300 ÷ 10 = 30
-         The final result is 30.
-
-================================================================================
-Benchmark Summary (all three runs)
-================================================================================
-
-Component                  Scenario 1    Scenario 2    Scenario 3
--------------------------  -----------   -----------   -----------
-Router (LLM plan gen)      144 ms        143 ms        141 ms
-Tool: weather              18 ms         —             —
-Tool: exchange             16 ms         —             —
-Tool: getProductInfo       —             141 ms        —
-  (incl. ChromaDB query)   —             (122 ms RAG)  —
-Tool: math (per step)      —             —             12 ms
-Synthesizer (LLM)          240 ms        244 ms        241 ms
-End-to-End                 437 ms        544 ms        424 ms
-
-To collect benchmark lines from a live run:
-    grep "\[Benchmark\]" scripts/logs/final-project-services/*.log
+| Scenario             | Tools Used         | Outcome              |
+|----------------------|--------------------|----------------------|
+| Weather + Exchange   | weather, exchange  | success              |
+| Math + Weather       | weather, math      | success              |
+| Chat + Exchange      | exchange           | success              |
+| RAG — Tesla          | chat (RAG)         | success              |
+| RAG — MacBook        | chat (RAG)         | success              |
+| Worker crash/restart | math               | successful recovery  |

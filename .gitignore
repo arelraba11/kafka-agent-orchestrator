@@ -14,6 +14,7 @@ build/
 *.jar
 *.war
 *.ear
+**/bin/
 
 # Logs
 *.log
@@ -82,7 +83,7 @@ ENV/
 *.egg-info/
 
 # Local vector databases
-services/python-rag/chroma_db/
+src/python/rag/chroma_db/
 
 # Claude files
 .claude/

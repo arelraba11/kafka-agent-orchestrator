@@ -1,302 +1,498 @@
-# Kafka AI Microservices — Course Project
+# Final Project: Event-Sourced Hybrid AI Agent with Kafka
 
-A progressive Kafka learning course that builds a distributed, event-driven AI system step by step. Each exercise adds a new architectural layer — from regex routing to LLM pipelines, self-correcting processors, and parallel AI inference with stream joins.
-
----
-
-## Technologies
-
-| Layer | Technology |
-|---|---|
-| Messaging | Apache Kafka 3.8.0 (KRaft, no ZooKeeper) |
-| Runtime | [Bun](https://bun.sh/) 1.0+ |
-| Language | TypeScript |
-| AI / LLM | OpenAI `gpt-4o-mini`, Ollama `llama3` (Ex4) |
-| Infrastructure | Docker, docker-compose |
-| Kafka client | KafkaJS |
+**Advanced Data Engineering — Final Submission**
 
 ---
 
-## Project Structure
+## Project Overview
 
-```
-kafka-beginners-course-main/
-├── infra/
-│   ├── docker-compose.yml      # Single Kafka broker (KRaft, port 9092)
-│   └── topics.sh               # Creates all 17 Kafka topics
-├── scripts/
-│   ├── start-ex{1-4}.sh        # Background service launchers per exercise
-│   ├── stop-all.sh             # pkill -f bun
-│   └── logs/                   # ex{1-4}-services/<service>.log
-├── shared/
-│   ├── kafka/client.ts         # KafkaJS factory (createProducer, createConsumer, etc.)
-│   ├── llm/openai.ts           # callLLM(prompt) → gpt-4o-mini
-│   ├── topics.ts               # All topic name constants — import here, never hardcode
-│   ├── prompts/                # LLM prompt templates (Ex2/3 and Ex4)
-│   └── types/                  # TypeScript interfaces for all events
-├── services/
-│   ├── core/                   # UI, memory, router, response aggregator (Ex1–2)
-│   ├── apps/                   # math, weather, exchange, general-chat handlers
-│   ├── llm/                    # guardrail, LLM router, CoT math service (Ex2)
-│   ├── reviews/                # review producer, processor, analytics (Ex3)
-│   ├── customer-support/       # support producer, sanitizer, sentiment, urgency, aggregator (Ex4)
-│   └── python-workers/         # optional HuggingFace sentiment/urgency workers (Ex4)
-├── kafka-basics/               # Java: Producer/Consumer demos
-├── kafka-producer-wikimedia/   # Java: Wikimedia SSE → Kafka
-├── kafka-consumer-opensearch/  # Java: Kafka → OpenSearch
-└── kafka-streams-wikimedia/    # Java: Kafka Streams aggregations
-```
+This project implements an **event-sourced, multi-step AI agent** built on Apache Kafka 3.8.0 (KRaft). Every component is a stateless microservice that communicates exclusively through Kafka topics — no service calls another service directly. Coordination is achieved entirely through immutable, ordered events.
+
+The system accepts a natural-language query from a user, plans a sequence of tool calls, executes each tool in order, and synthesizes a single coherent answer — entirely through asynchronous Kafka event flows.
+
+**Goal:** Demonstrate that Kafka is a viable, low-latency backbone for AI agent orchestration, replacing fragile point-to-point RPC with durable, replayable, loosely coupled event streams. The architecture supports horizontal scaling, fault isolation, and plan recovery across process restarts.
+
+The project also includes four progressive exercises (Ex1–Ex4) that build foundational Kafka skills culminating in the Final Project architecture.
 
 ---
 
-## Kafka Setup
+## How This Implementation Satisfies the Course Requirements
 
-```bash
-# 1. Start broker
-docker-compose -f infra/docker-compose.yml up -d
+### Event Sourcing
 
-# 2. Create all 17 topics
-bash infra/topics.sh
+Every state change in the pipeline is an immutable event published to a Kafka topic. The `conversation-events` topic is the append-only log that captures the full lifecycle of a conversation: `PlanGenerated → ToolInvocationResulted (×N) → PlanCompleted → FinalAnswerSynthesized`. Any service can replay this topic from offset 0 to reconstruct what happened to any `conversationId`.
 
-# 3. Install dependencies
-bun install
+Tool workers are purely functional: each consumes one event, computes a result, and emits one event. They hold no state and are trivially replayable.
 
-# 4. Configure environment
-cp .env.example .env
-```
+### Stateful Stream Processing
 
-| Variable | Required for | Value |
+The Orchestrator is the only stateful component. It uses **LevelDB** as a local embedded key-value store (keyed by `conversationId`) to persist plan state across process restarts. The state machine transitions are: `savePlan()` on `PlanGenerated`, `updatePlan()` on each `ToolInvocationResulted`, and `deletePlan()` after `PlanCompleted` is published. If the Orchestrator crashes mid-plan, `ToolInvocationResulted` events are already durable in Kafka; on restart, the plan is restored from LevelDB and execution resumes from `stepIndex`.
+
+### Distributed Orchestration
+
+The Orchestrator dispatches tool steps sequentially — one `ToolInvocationRequested` at a time — and collects results from independent worker processes. Each worker runs as a separate process with its own consumer group. The `conversationId` is used as the Kafka message key, guaranteeing partition-level ordering per conversation and enabling concurrent execution of multiple conversations across the three-partition topics.
+
+### CQRS
+
+Commands (write-side intent) and events (read-side facts) flow on separate topics:
+
+- **Commands:** `user-commands` carries `UserQueryReceived` (user intent) and `SynthesizeFinalAnswerRequested` (synthesis trigger).
+- **Events:** `conversation-events` carries all domain facts (`PlanGenerated`, `ToolInvocationResulted`, `PlanCompleted`, `FinalAnswerSynthesized`).
+- **Tool dispatch:** `tool-invocation-requests` carries `ToolInvocationRequested` — write-side commands to workers.
+
+The Aggregator acts as the CQRS bridge: it reads the read-side (`PlanCompleted` on `conversation-events`) and emits a write-side command (`SynthesizeFinalAnswerRequested` on `user-commands`).
+
+### Fault Tolerance / Resilience
+
+- **Worker crash recovery:** When a worker process is killed and restarted, its consumer group rejoins Kafka, picks up from its last committed offset, and processes any pending `ToolInvocationRequested` events. Demonstrated in the resilience scenario (see Execution Scenarios below).
+- **Orchestrator restart recovery:** LevelDB persists `in_progress` plans. On restart, the Orchestrator can resume dispatching from `stepIndex`.
+- **Idempotency guards:** `ToolInvocationResulted` events for unknown `conversationId`s (plan already completed or state deleted) are silently dropped rather than causing errors.
+- **Dead-letter queue:** Any service that encounters an unrecoverable error publishes to `dead-letter-queue` for manual inspection.
+
+### Microservices Architecture
+
+Eight independent services, each in its own file, each with its own consumer group, each deployable and restartable independently:
+
+| Service | Binary | Responsibility |
 |---|---|---|
-| `OPENAI_API_KEY` | Exercises 2, 3, 4 | `sk-...` |
-| `ROUTER_MODE` | Exercises 1, 2 | `regex` or `llm` |
-
----
-
-## System Architecture
-
-**Chatbot flow (Exercises 1 & 2):**
-```
-stdin → UserInterface → [user-input-events]
-  → MemoryService + RouterService → [intent-*]
-  → Apps → [app-results] → ResponseAggregator → [bot-responses] → UserInterface
-```
-
-**Reviews pipeline (Exercise 3):**
-```
-stdin → ReviewProducer → [raw-reviews-topic]
-→ ReviewProcessor (3-step LLM) → [processed-insights-topic] → ReviewAnalytics → stdout
-```
-
-**Customer support pipeline (Exercise 4):**
-```
-stdin → CustomerSupportProducer → [raw-customer-messages]
-→ SanitizerService → [sanitized-messages]
-  ├→ SentimentAnalyzer → [analysis-sentiment] ─┐
-  └→ UrgencyClassifier → [analysis-urgency]   ─┴→ InsightAggregator → stdout
-```
+| UserInterface | `src/node/core/userInterface.ts` | Stdin/stdout bridge |
+| RouterService | `src/node/core/routerService.ts` | Plan generation |
+| Orchestrator | `src/node/orchestration/orchestrator.ts` | State machine + tool dispatch |
+| Aggregator | `src/node/orchestration/aggregator.ts` | Orchestration / synthesis bridge |
+| AnswerSynthesizer | `src/node/orchestration/answerSynthesizer.ts` | LLM synthesis |
+| mathApp | `src/node/apps/mathApp.ts` | Math tool worker |
+| weatherApp | `src/node/apps/weatherApp.ts` | Weather tool worker |
+| exchangeApp | `src/node/apps/exchangeApp.ts` | Currency exchange worker |
+| generalChatApp | `src/node/apps/generalChatApp.ts` | Chat / RAG worker |
+| RAG Retriever | `src/python/rag/rag_retriever.py` | Product knowledge retrieval |
 
 ---
 
 ## Architecture
 
-The Final Project implements an **event-sourced, multi-step AI agent** where every component communicates exclusively through Kafka topics.
+Full architecture diagram: [`docs/architecture.md`](docs/architecture.md)
+
+### System Flow
 
 ```
-UserInterface
-      │
-  user-commands
-      │
-    Router
-      │
-  conversation-events
-      │
-  Orchestrator
-      │
-  tool-invocation-requests
-      │
-   Workers
-(math · weather · exchange · RAG)
-      │
-  conversation-events
-      │
-  Aggregator
-      │
-  user-commands
-      │
-Answer Synthesizer
-      │
-  conversation-events
-      │
-UserInterface
+stdin
+  │
+UserInterface ──────────────────────────── UserQueryReceived ──────────────┐
+                           │                                               │
+                     [user-commands]                                       │
+                           │                                               │
+                    RouterService                                          │
+                           │  PlanGenerated                                │
+                  [conversation-events]                                    │
+                           │                                               │
+                   Orchestrator ◄─── LevelDB (.plan-store/)                │
+                           │  ToolInvocationRequested (one per step)       │
+               [tool-invocation-requests]                                  │
+                           │                                               │
+       ┌───────────────────┼──────────────────┬────────────────────┐       │
+    mathApp          weatherApp          exchangeApp        generalChatApp  │
+    (+ RAG via Python rag_retriever.py)                                    │
+       └───────────────────┴──────────────────┴────────────────────┘       │
+                           │  ToolInvocationResulted                       │
+                  [conversation-events]                                    │
+                           │                                               │
+                   Orchestrator ──── PlanCompleted ────────────────────────┤
+                           │                                               │
+                  [conversation-events]                                    │
+                           │                                               │
+                    Aggregator                                             │
+                           │  SynthesizeFinalAnswerRequested               │
+                     [user-commands]                                       │
+                           │                                               │
+                  AnswerSynthesizer ──── FinalAnswerSynthesized ───────────┘
+                           │
+                  [conversation-events]
+                           │
+                   UserInterface → stdout
 ```
 
-- **Router** — receives a user query and calls an LLM (gpt-4o-mini) with a few-shot prompt to produce an ordered plan of tool names (`PlanGenerated`).
-- **Orchestrator** — consumes `PlanGenerated`, dispatches each tool sequentially via `ToolInvocationRequested`, collects results, persists state to LevelDB, and emits `PlanCompleted` when all steps finish.
-- **Workers** — stateless consumers on `tool-invocation-requests`; each worker handles exactly one tool (`math`, `weather`, `exchange`, or `getProductInformation` via ChromaDB RAG) and emits `ToolInvocationResulted`.
-- **Aggregator** — bridges `PlanCompleted` to the synthesis step by emitting `SynthesizeFinalAnswerRequested` on `user-commands`.
-- **Answer Synthesizer** — calls the LLM with all collected tool results and synthesizes a coherent final answer (`FinalAnswerSynthesized`), which the UserInterface displays to the user.
+### Kafka Topics
+
+All topic name constants are defined in `shared/topics.ts`. Topic strings are never hardcoded in service code.
+
+| Topic | Partitions | Purpose |
+|---|---|---|
+| `user-commands` | 3 | Commands from UserInterface (`UserQueryReceived`) and Aggregator (`SynthesizeFinalAnswerRequested`) |
+| `conversation-events` | 3 | All domain events: `PlanGenerated`, `ToolInvocationResulted`, `PlanCompleted`, `FinalAnswerSynthesized` |
+| `tool-invocation-requests` | 3 | Tool dispatch requests from the Orchestrator, one per step |
+| `dead-letter-queue` | 3 | Unrecoverable errors from any service — for manual inspection |
+
+`conversationId` is used as the Kafka message key, guaranteeing ordering per conversation and enabling up to three concurrent conversations across the three-partition topics without head-of-line blocking.
 
 ---
 
-## Running the System
+## Repository Structure
 
-Stop services between exercises: `bash scripts/stop-all.sh`
+```
+kafka-beginners-course-main/
+├── infra/
+│   ├── docker-compose.yml          # Kafka (KRaft) + Ollama + ChromaDB
+│   ├── topics.sh                   # Creates all 21 Kafka topics (1 partition)
+│   └── topics-final.sh             # Recreates final-project topics (3 partitions)
+├── scripts/
+│   ├── start-final.sh              # Final Project launcher (8 background services)
+│   ├── start-ex{1-4}.sh            # Per-exercise background service launchers
+│   ├── stop-all.sh                 # pkill -f bun
+│   └── logs/                       # Per-service log files (gitignored)
+│       ├── final-project-services/ # router.log, orchestrator.log, answer.log, ...
+│       └── ex{1-4}-services/
+├── src/
+│   ├── node/
+│   │   ├── core/                   # userInterface, routerService, memoryService, responseAggregator
+│   │   ├── apps/                   # mathApp, weatherApp, exchangeApp, generalChatApp (dual-mode)
+│   │   ├── llm/                    # guardrailService, llmRouterService, cotMathService (Ex2)
+│   │   ├── orchestration/          # orchestrator, aggregator, answerSynthesizer (Final)
+│   │   ├── reviews/                # reviewProducer, reviewProcessor, reviewAnalytics (Ex3)
+│   │   └── customer-support/       # customerSupportProducer, sanitizer, sentiment, urgency, insightAggregator (Ex4)
+│   ├── python/
+│   │   └── rag/                    # rag_retriever.py, index_kb.py, requirements.txt
+│   └── schemas/                    # JSON Schema (draft-07) for all Final Project events
+├── shared/
+│   ├── kafka/client.ts             # KafkaJS factory: createProducer, createConsumer, sendMessage, subscribeAndRun
+│   ├── llm/openai.ts               # callLLM(prompt) → gpt-4o-mini, strips markdown fences
+│   ├── topics.ts                   # All topic name constants — import here, never hardcode
+│   ├── state/planStore.ts          # LevelDB-backed orchestrator plan store
+│   ├── schemas/                    # TypeScript interfaces for Final Project events
+│   ├── types/                      # TypeScript interfaces for Ex1–4 events and domain types
+│   ├── prompts/                    # All LLM prompt functions — never inline prompt strings
+│   └── customerSupport/            # benchmark helpers (Ex4)
+├── data/
+│   └── products/                   # RAG knowledge base: iphone.txt, macbook.txt, tesla.txt
+├── docs/
+│   ├── architecture.md             # Full system architecture (this project's source of truth)
+│   ├── benchmark.md                # Measured latency results
+│   ├── execution-log.txt           # Three annotated end-to-end execution traces
+│   ├── demo-scenarios/             # Demo scripts
+│   └── resilience-tests/           # Resilience test procedures and results
+│
+│   ── Java course examples (standalone, not part of the Final Project) ──
+├── kafka-basics/                   # Producer/Consumer demos
+├── kafka-producer-wikimedia/       # Wikimedia SSE → Kafka
+├── kafka-consumer-opensearch/      # Kafka → OpenSearch
+└── kafka-streams-wikimedia/        # Kafka Streams aggregations
+```
 
-### Exercise 1 — Distributed Chatbot (Regex Router)
+> **Java examples** (`kafka-basics`, `kafka-producer-wikimedia`, `kafka-consumer-opensearch`, `kafka-streams-wikimedia`) are standalone Java demonstrations from the original Kafka beginners course. They are not part of the Final Project and are included for reference only.
 
-Eight microservices communicate exclusively through Kafka. The router classifies intent with regex and routes to a domain app.
+---
 
-**Routing rules:**
-- Math: `/\d+\s*[+\-*/]\s*\d+/`
-- Weather: `/\b(weather|temperature|forecast|hot|cold|rain|sunny)\b/i`
-- Exchange: `/\b(USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i`
-- Default: general-chat
+## How to Run
+
+### Prerequisites
+
+- Docker + docker-compose
+- Bun 1.0+
+- `OPENAI_API_KEY` (exercises 2, 3, 4, and Final Project)
+- Ollama with `llama3` pulled (Exercise 4 sanitizer only)
+
+### Infrastructure Setup (once)
+
+```bash
+# Copy and configure environment variables
+cp .env.example .env
+# Set OPENAI_API_KEY and ROUTER_MODE in .env
+
+# Start Kafka (KRaft), Ollama, and ChromaDB
+docker-compose -f infra/docker-compose.yml up -d
+
+# Create all 21 topics (1 partition each)
+bash infra/topics.sh
+
+# Upgrade the 4 Final Project topics to 3 partitions
+bash infra/topics-final.sh
+
+# Install TypeScript dependencies
+bun install
+```
+
+| Variable | Required for | Value |
+|---|---|---|
+| `OPENAI_API_KEY` | Ex2, Ex3, Ex4, Final | `sk-...` |
+| `ROUTER_MODE` | Ex1, Ex2 | `regex` or `llm` |
+
+### Final Project
+
+```bash
+# Start all 8 background services (router, orchestrator, aggregator, synthesizer, 4 workers)
+bash scripts/start-final.sh
+
+# In a separate terminal — start last
+bun run src/node/core/userInterface.ts
+```
+
+Logs: `scripts/logs/final-project-services/`
+
+To stop all services: `bash scripts/stop-all.sh`
+
+### Exercise 1 — Regex Chatbot
 
 ```bash
 # .env: ROUTER_MODE=regex
 bash scripts/start-ex1.sh
-bun run services/core/userInterface.ts   # separate terminal
+bun run src/node/core/userInterface.ts   # separate terminal
 ```
 
-```
-> 42 * 7            → Bot [math]: 294
-> weather in London → Bot [weather]: Weather in London is 12°C and rainy.
-> convert 20 EUR to ILS → Bot [exchange]: 20 EUR = 80 ILS
-> my name is Arel   → Bot [chat]: Nice to meet you, Arel!
-```
-
----
-
-### Exercise 2 — LLM Prompt Engineering (adds to Exercise 1)
-
-Three new services replace regex with an LLM classification pipeline.
-
-| Service | Technique | Purpose |
-|---|---|---|
-| `guardrailService` | Keyword filter | Blocks politics/malware before any LLM call |
-| `llmRouterService` | Few-Shot (9 examples) | Classifies intent + extracts structured JSON |
-| `cotMathService` | Chain-of-Thought | Converts word problems → arithmetic expressions |
+### Exercise 2 — LLM Routing
 
 ```bash
 # .env: ROUTER_MODE=llm, OPENAI_API_KEY=sk-...
 bash scripts/start-ex2.sh
-bun run services/core/userInterface.ts   # separate terminal
+bun run src/node/core/userInterface.ts   # separate terminal
 ```
 
-```
-> What's the temperature in Tokyo? → Bot [weather]: 20°C, humid
-> five plus three                  → Bot [math]: 8
-> hack the mainframe               → [guardrail] Blocked — malware keywords detected
-```
-
----
-
-### Exercise 3 — Review Analysis Pipeline (standalone)
-
-A 3-step LLM processor analyzes product reviews with zero-shot routing, structured extraction, and self-correction.
-
-**ReviewProcessor pipeline:**
-1. **Zero-Shot route** — is this a review? (`analyzeReview | ignore`)
-2. **Structured extraction** — `{ summary, sentiment, score(1–10), aspects[] }`
-3. **Self-correction** — if `score < 4` and `sentiment == "Positive"` → re-analyze
+### Exercise 3 — Review Analysis Pipeline
 
 ```bash
 # .env: OPENAI_API_KEY=sk-...
 bash scripts/start-ex3.sh
-bun run services/reviews/reviewProducer.ts   # separate terminal
+bun run src/node/reviews/reviewProducer.ts   # separate terminal
 ```
 
-```
-> The product arrived on time and worked perfectly.
-[analytics] Sentiment: Positive | Score: 9/10 | Avg: 9.0
-
-> Not a review, just noise.
-[processor] Ignored — not a review.
-```
-
----
-
-### Exercise 4 — Customer Support Analysis Pipeline (standalone)
-
-Demonstrates Kafka fan-out, parallel AI inference, and stream join by `message_id`. Two independent classifiers process each sanitized message; the aggregator correlates results.
+### Exercise 4 — Customer Support Pipeline
 
 ```bash
 # .env: OPENAI_API_KEY=sk-...
 # Requires: ollama serve && ollama pull llama3
 bash scripts/start-ex4.sh
-bun run services/customer-support/customerSupportProducer.ts   # separate terminal
-```
-
-**Alert rule:** `NEGATIVE` + `Urgent` → `🚨 STRONG ALERT`
-
-```
-> Jane called 555-1234, payment failed and account locked
-[sanitizer] [NAME] called [NUMBER], payment failed and account locked
-[insight] 🚨 STRONG ALERT — Sentiment: NEGATIVE | Urgency: Urgent
-
-> Just checking on order status
-[insight] Sentiment: POSITIVE | Urgency: General Inquiry
-```
-
-**Optional Python workers** (HuggingFace, replace TS sentiment/urgency):
-```bash
-cd services/python-workers
-python -m venv venv && source venv/bin/activate && pip install -r requirements.txt
-python sentiment_worker.py   # group: sentiment-group
-python urgency_worker.py     # group: urgency-group
+bun run src/node/customer-support/customerSupportProducer.ts   # separate terminal
 ```
 
 ---
 
-## Logs and Debugging
+## Implemented Services
 
-```bash
-tail -f scripts/logs/ex1-services/router-service.log
-tail -f scripts/logs/ex2-services/llm-router-service.log
-tail -f scripts/logs/ex3-services/review-processor.log
-tail -f scripts/logs/ex4-services/insight-aggregator.log
+### UserInterface
+**File:** `src/node/core/userInterface.ts` | **Groups:** `ui-service`, `ui-service-final-answer`
+
+Reads from `stdin`, generates a `conversationId` (UUID v4), and publishes `UserQueryReceived` to `user-commands`. Concurrently listens on `conversation-events` for `FinalAnswerSynthesized` and prints the answer to stdout. The only component that bridges the human operator to the Kafka cluster. Started manually in a separate terminal after all background services are running. Dual-mode: also handles Ex1/2 chatbot responses from `bot-responses`.
+
+### RouterService
+**File:** `src/node/core/routerService.ts` | **Group:** `router-plan-service`
+
+Receives `UserQueryReceived` from `user-commands` and runs a keyword/regex planner (`generatePlan`) that produces an ordered list of tool steps. Rules are non-exclusive — a single query can match multiple tools.
+
+Planner rules (evaluated in order):
+1. **weather** — matches weather/temperature/forecast keywords; extracts city
+2. **exchange** — matches currency codes or convert/exchange keywords; extracts currencies and amount
+3. **math** — matches arithmetic operators or word-form math with a digit; extracts expression
+4. **chat** — fallback if no other rule matched
+
+Emits `PlanGenerated` to `conversation-events`. Logs `[Benchmark] routerLatency=Xms`.
+
+### Orchestrator
+**File:** `src/node/orchestration/orchestrator.ts` | **Group:** `orchestrator-service`
+
+The central state machine. On `PlanGenerated`: saves the full plan to LevelDB (`stepIndex=0`, `status=in_progress`) and dispatches `ToolInvocationRequested` for `steps[0]`. On `ToolInvocationResulted`: appends the result, increments `stepIndex`, then either dispatches the next step or emits `PlanCompleted` (and deletes the plan from LevelDB) when all steps are done. Logs `[Benchmark] workerLatency=Xms`.
+
+#### LevelDB Plan Store
+**File:** `shared/state/planStore.ts` | **Location:** `.plan-store/` (gitignored)
+
+```typescript
+interface PlanState {
+  plan: { tool: string; args: Record<string, unknown> }[];
+  stepIndex: number;                      // index of the next step to dispatch
+  results: Record<string, unknown>[];     // accumulated ToolInvocationResulted payloads
+  status: "in_progress" | "completed";
+  planReceivedAt: number;                 // epoch ms — used for workerLatency
+}
 ```
 
-Conversation history: `services/core/history.json` — send `reset` in the UI to clear.
+State is keyed by `conversationId`. Survives process restarts. `deletePlan` is called only after `PlanCompleted` is successfully published.
+
+### Aggregator
+**File:** `src/node/orchestration/aggregator.ts` | **Group:** `aggregator-service`
+
+A lightweight decoupling bridge. Listens for `PlanCompleted` on `conversation-events` and re-publishes the accumulated results as `SynthesizeFinalAnswerRequested` on `user-commands`. This means the Orchestrator has no knowledge of the synthesizer — the Aggregator is the CQRS seam between orchestration and synthesis.
+
+### AnswerSynthesizer
+**File:** `src/node/orchestration/answerSynthesizer.ts` | **Group:** `answer-synthesizer`
+
+Maintains an in-memory cache of `userInput` per `conversationId` (populated from `UserQueryReceived` events). On `SynthesizeFinalAnswerRequested`, builds a prompt containing the original question and all tool results, makes a single `gpt-4o-mini` call, and publishes `FinalAnswerSynthesized`. Synthesis latency is constant regardless of the number of plan steps. Logs `[Benchmark] synthesizerLatency=Xms`.
+
+### Tool Workers
+
+Each worker runs two consumer groups simultaneously — one for the Ex1/2 chatbot mode (`intent-*` topics) and one for the Final Project (`tool-invocation-requests`, filtered by `toolName`). Workers are stateless.
+
+| Worker | File | Final Group | Logic |
+|---|---|---|---|
+| **mathApp** | `src/node/apps/mathApp.ts` | `math-tool-worker` | Recursive descent parser — no `eval()`. Supports `+ − × ÷` and parentheses. |
+| **weatherApp** | `src/node/apps/weatherApp.ts` | `weather-tool-worker` | Mock data for 10 cities (e.g. Tel Aviv: 28°C Sunny, Paris: 17°C Overcast). Unknown cities default to 20°C clear. |
+| **exchangeApp** | `src/node/apps/exchangeApp.ts` | `exchange-tool-worker` | Static ILS-based cross-rates for 7 currencies (USD, EUR, GBP, JPY, CHF, CAD, AUD). No external API calls. |
+| **generalChatApp** | `src/node/apps/generalChatApp.ts` | `chat-tool-worker` | 9 named-entity/intent patterns + 5 random fallbacks. History-aware for name and memory lookups. |
+
+### RAG Retriever
+**File:** `src/python/rag/rag_retriever.py` | **Tool name:** `getProductInformation`
+
+Indexes three product knowledge files (`data/products/iphone.txt`, `macbook.txt`, `tesla.txt`) into ChromaDB using sentence-transformer embeddings. On receiving a `ToolInvocationRequested` with `toolName=getProductInformation`, performs a top-K vector similarity search and returns the retrieved context for downstream synthesis.
 
 ---
 
-## Benchmark
+## Schemas / Event Model
 
-Latency is measured using epoch-ms timestamps embedded in event payloads. Each
-service records its output timestamp; downstream services compute the delta and
-emit a `[Benchmark]` log line. Collect all benchmark lines from a live run with:
+JSON Schema definitions (draft-07) for all Final Project events are in `src/schemas/`. TypeScript interfaces are in `shared/schemas/`.
 
-```bash
-grep "\[Benchmark\]" scripts/logs/final-project-services/*.log
+All events share a common envelope:
+
+```typescript
+{
+  conversationId: string;   // shared across all events in one request
+  timestamp: number;        // Unix epoch ms — used for latency benchmarking
+  eventType: string;        // discriminator
+  payload: object;          // event-specific fields
+}
 ```
 
-Figures below are representative averages from three observed runs
-(single-step weather, RAG product query, two-step math).
+| Event | `eventType` | Topic | Payload |
+|---|---|---|---|
+| `UserQueryReceived` | `"UserQueryReceived"` | `user-commands` | `{ userInput: string }` |
+| `PlanGenerated` | `"PlanGenerated"` | `conversation-events` | `{ steps: { tool: string, args: Record<string, unknown> }[] }` |
+| `ToolInvocationRequested` | `"ToolInvocationRequested"` | `tool-invocation-requests` | `{ toolName: string, input: Record<string, unknown> }` |
+| `ToolInvocationResulted` | `"ToolInvocationResulted"` | `conversation-events` | `{ toolName: string, result: Record<string, unknown> }` |
+| `PlanCompleted` | `"PlanCompleted"` | `conversation-events` | `{ results: Record<string, unknown>[] }` |
+| `FinalAnswerSynthesized` | `"FinalAnswerSynthesized"` | `conversation-events` | `{ answer: string }` |
 
-| Component | Model | Avg Latency | Events/sec | Quality | Cost |
-|---|---|---|---|---|---|
-| Router | gpt-4o-mini | ~142 ms | ~7 | Plan accuracy: high | $ |
-| Orchestrator | Node / Bun | ~2 ms | >100 | N/A — pure dispatch | 0 |
-| Tool: weather / exchange / math | Bun (no LLM) | ~15 ms | >60 | Deterministic | 0 |
-| RAG Retrieval | ChromaDB + sentence-transformers | ~125 ms | ~8 | Top-K recall: good | 0 |
-| LLM tool worker (getProductInfo) | gpt-4o-mini | ~140 ms | ~7 | RAG-constrained | $ |
-| Final Synthesis | gpt-4o-mini | ~242 ms | ~4 | Coherent answer | $ |
-| End-to-End (single-step) | Total | ~430 ms | ~2 | 5 | low |
-| End-to-End (multi-step, N tools) | Total | ~430 + N×15 ms | — | 5 | low |
-
-**Notes**
-- Router latency dominates single-step flows; each additional tool adds ~15 ms
-  for local workers or ~140 ms for LLM-backed workers.
-- RAG retrieval (~125 ms) is the largest non-LLM cost; it includes embedding
-  the query and querying ChromaDB.
-- Synthesizer latency (~242 ms) is stable regardless of the number of tool
-  results, as all results are passed in a single LLM call.
-- All LLM calls use `gpt-4o-mini`; switching to a local Ollama model sets
-  cost to 0 but increases latency to 800–1500 ms per call.
+Schema files: `src/schemas/UserQueryReceived.json`, `PlanGenerated.json`, `ToolInvocationRequested.json`, `ToolInvocationResulted.json`, `PlanCompleted.json`, `FinalAnswerSynthesized.json`.
 
 ---
 
-## Future Architecture
+## Benchmark Summary
 
-The system will evolve into a fully event-sourced AI agent architecture — adding persistent state stores, multi-agent coordination, tool-use via Kafka, and replay-based debugging across all pipelines.
+Latency measured via `timestamp` fields in event payloads. Each service computes the delta and emits a `[Benchmark]` log line. Three requests were executed. Source: [`docs/benchmark.md`](docs/benchmark.md).
+
+```bash
+grep "[Benchmark]" scripts/logs/final-project-services/*.log
+```
+
+### Router Latency (`routerLatency`) — `router.log`
+
+| Request | Latency |
+|---|---|
+| 1 | 5 ms |
+| 2 | 4 ms |
+| 3 | 5 ms |
+
+**Average: ~4.7 ms**
+
+### Worker Latency (`workerLatency`) — `orchestrator.log`
+
+| Request | Latency |
+|---|---|
+| 1 | 25 ms |
+| 2 | 7 ms |
+| 3 | 11 ms |
+
+**Average: ~14 ms**
+
+### Synthesizer Latency (`synthesizerLatency`) — `answer.log`
+
+| Request | Latency |
+|---|---|
+| 1 | 1369 ms |
+| 2 | 3104 ms |
+| 3 | 2901 ms |
+
+**Average: ~2458 ms (~2.46 s)**
+
+### End-to-End
+
+```
+  4.7 ms  (router)
++  14 ms  (workers)
++2458 ms  (synthesizer)
+──────────────────────
+≈ 2477 ms (~2.5 s)
+```
+
+**The Kafka pipeline — routing, orchestration, and tool execution — adds under 20 ms of overhead. The dominant cost is the single `gpt-4o-mini` LLM call in the AnswerSynthesizer (~2.46 s). Kafka is not the bottleneck.**
+
+---
+
+## Resilience Summary
+
+Source: [`docs/execution-log.txt`](docs/execution-log.txt)
+
+The resilience scenario demonstrates **worker crash and recovery**:
+
+1. The `mathApp` process is terminated with `pkill -f mathApp`.
+2. The worker is restarted: `bun run src/node/apps/mathApp.ts`.
+3. The consumer group `math-tool-worker` rejoins Kafka and logs: `Consumer has joined the group`.
+4. A new query (`"what is 12 * 9"`) is submitted.
+5. The Orchestrator dispatches `ToolInvocationRequested` for the math tool.
+6. The restarted worker picks up the event from its last committed offset and returns `12 * 9 = 108`.
+7. The full pipeline completes successfully. `synthesizerLatency=1508ms`.
+
+This demonstrates that Kafka's durable offset management ensures no event is lost across a worker restart. The Orchestrator's LevelDB state also allows plan recovery across an orchestrator restart.
+
+---
+
+## Execution Scenarios
+
+Three orchestration scenarios and two RAG scenarios were executed and logged in [`docs/execution-log.txt`](docs/execution-log.txt).
+
+### Orchestration Scenarios
+
+| Scenario | Query | Plan | Outcome |
+|---|---|---|---|
+| Weather + Exchange | `what's the weather in tel aviv and convert 100 usd to ils` | `[weather, exchange]` | Weather: 28°C sunny · 100 USD = 370 ILS · synthesizerLatency=2204ms |
+| Math + Weather | `what is 25 * 8 and what is the weather in paris` | `[weather, math]` | 25 × 8 = 200 · Paris 17°C overcast · synthesizerLatency=1035ms |
+| Chat + Exchange | `hello, and also convert 50 eur to usd` | `[chat, exchange]` | 50 EUR = 54.0541 USD · synthesizerLatency=1270ms |
+
+### RAG Scenarios
+
+| Scenario | Query | Outcome |
+|---|---|---|
+| Tesla Model 3 | `tell me about the tesla model 3` | Product context retrieved from ChromaDB; summary covering performance, range, autopilot · synthesizerLatency=3466ms |
+| MacBook | `what can you tell me about the macbook` | Product context retrieved; summary covering MacBook Air, MacBook Pro, macOS · synthesizerLatency=3085ms |
+
+### Resilience Scenario
+
+Worker crash (`pkill -f mathApp`) → restart → `what is 12 * 9` → `12 * 9 = 108` → successful recovery. synthesizerLatency=1508ms.
+
+---
+
+## Conclusions and Trade-offs
+
+### Strengths
+
+- **Loose coupling:** No service knows about any other service. Adding a new tool worker requires zero changes to the orchestrator or synthesizer.
+- **Durability:** Every event is persisted in Kafka. Plan state is persisted in LevelDB. The system is resilient to individual process crashes.
+- **Observability:** Latency is measurable at every pipeline segment using `timestamp` fields embedded in events. The `[Benchmark]` pattern makes performance visible without additional tooling.
+- **Horizontal scale:** `conversationId`-keyed partitioning allows multiple concurrent conversations to run in parallel without interference.
+- **Testability:** Stateless workers are purely functional (event in → event out) and straightforward to test in isolation.
+
+### Real Trade-offs
+
+- **Sequential tool execution:** The Orchestrator dispatches tools one at a time. For independent parallel steps (e.g. weather and exchange simultaneously), this adds unnecessary round-trip latency.
+- **LLM dominance:** The Kafka pipeline contributes under 20 ms; the synthesis LLM call contributes ~2.46 s. Latency improvements to the Kafka layer have negligible end-to-end impact.
+- **Single-broker limitation:** Running a single Kafka broker with a replication factor of 1 means the broker itself is a single point of failure. Appropriate for development; not for production.
+- **In-memory synthesizer cache:** The AnswerSynthesizer's `userInput` cache is in-memory only. An orchestrator restart would lose cached queries for in-flight conversations.
+- **Static tool registry:** The RouterService uses hardcoded keyword rules and the worker set is fixed. Adding a new tool requires code changes to both the router and the worker list.
+
+### Future Improvements
+
+- Parallel tool dispatch for independent steps within a single plan.
+- Durable `userInput` cache in the AnswerSynthesizer (e.g. backed by LevelDB or sourced from `conversation-events` replay).
+- Dynamic tool registration via a `tool-registry` topic.
+- Multi-broker Kafka cluster with replication for production resilience.
+- LLM-based planner to replace keyword regex rules, enabling open-ended tool selection.
+
+---
+
+## Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Messaging | Apache Kafka 3.8.0 (KRaft, no ZooKeeper) |
+| Runtime | Bun 1.0+ |
+| Language | TypeScript (strict mode) |
+| AI / LLM | OpenAI `gpt-4o-mini` |
+| Local LLM | Ollama `llama3` (Exercise 4 only) |
+| Vector DB | ChromaDB + sentence-transformers |
+| State Store | LevelDB (Orchestrator) |
+| Kafka Client | KafkaJS |
+| Infrastructure | Docker, docker-compose |
