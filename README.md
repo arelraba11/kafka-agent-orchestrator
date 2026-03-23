@@ -169,15 +169,7 @@ kafka-beginners-course-main/
 │   ├── execution-log.txt           # Three annotated end-to-end execution traces
 │   ├── demo-scenarios/             # Demo scripts
 │   └── resilience-tests/           # Resilience test procedures and results
-│
-│   ── Java course examples (standalone, not part of the Final Project) ──
-├── kafka-basics/                   # Producer/Consumer demos
-├── kafka-producer-wikimedia/       # Wikimedia SSE → Kafka
-├── kafka-consumer-opensearch/      # Kafka → OpenSearch
-└── kafka-streams-wikimedia/        # Kafka Streams aggregations
 ```
-
-> **Java examples** (`kafka-basics`, `kafka-producer-wikimedia`, `kafka-consumer-opensearch`, `kafka-streams-wikimedia`) are standalone Java demonstrations from the original Kafka beginners course. They are not part of the Final Project and are included for reference only.
 
 ---
 

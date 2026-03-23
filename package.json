@@ -1,8 +1,11 @@
 {
   "scripts": {
-    "start:all": "./scripts/start-all.sh",
-    "start:regex": "./scripts/start-regex-mode.sh",
-    "start:llm": "./scripts/start-llm-mode.sh"
+    "start:final": "./scripts/start-final.sh",
+    "start:ex1": "./scripts/start-ex1.sh",
+    "start:ex2": "./scripts/start-ex2.sh",
+    "start:ex3": "./scripts/start-ex3.sh",
+    "start:ex4": "./scripts/start-ex4.sh",
+    "stop": "./scripts/stop-all.sh"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",
