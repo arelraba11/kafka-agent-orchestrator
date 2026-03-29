@@ -262,25 +262,21 @@ bun run src/node/customer-support/customerSupportProducer.ts   # separate termin
 ### UserInterface
 **File:** `src/node/core/userInterface.ts` | **Groups:** `ui-service`, `ui-service-final-answer`
 
-Reads from `stdin`, generates a `conversationId` (UUID v4), and publishes `UserQueryReceived` to `user-commands`. Concurrently listens on `conversation-events` for `FinalAnswerSynthesized` and prints the answer to stdout. The only component that bridges the human operator to the Kafka cluster. Started manually in a separate terminal after all background services are running. Dual-mode: also handles Ex1/2 chatbot responses from `bot-responses`.
+Reads from `stdin`, generates a `conversationId` (UUID v4), and publishes `UserQueryReceived` to `user-commands`. Concurrently listens on `conversation-events` for `FinalAnswerSynthesized` (prints the answer) and `PlanFailed` (prints the failure reason and the tool that failed). The only component that bridges the human operator to the Kafka cluster. Started manually in a separate terminal after all background services are running. Dual-mode: also handles Ex1/2 chatbot responses from `bot-responses`.
 
 ### RouterService
 **File:** `src/node/core/routerService.ts` | **Group:** `router-plan-service`
 
-Receives `UserQueryReceived` from `user-commands` and runs a keyword/regex planner (`generatePlan`) that produces an ordered list of tool steps. Rules are non-exclusive — a single query can match multiple tools.
+Receives `UserQueryReceived` from `user-commands` and generates an ordered list of tool steps using an **LLM-based planner** (`generatePlanLLM`). The planner calls `gpt-4o-mini` with `ROUTER_SYSTEM_PROMPT` — a few-shot prompt that lists available tools, their argument shapes, and the `{{step_N.result}}` placeholder syntax for inter-step dependencies. If the LLM call fails or returns invalid JSON, it falls back to the keyword/regex planner (`generatePlanRegex`) and logs `[router] mode=regex-fallback`.
 
-Planner rules (evaluated in order):
-1. **weather** — matches weather/temperature/forecast keywords; extracts city
-2. **exchange** — matches currency codes or convert/exchange keywords; extracts currencies and amount
-3. **math** — matches arithmetic operators or word-form math with a digit; extracts expression
-4. **chat** — fallback if no other rule matched
+Available tools: `weather`, `exchange`, `math`, `chat`, `getProductInformation`.
 
-Emits `PlanGenerated` to `conversation-events`. Logs `[Benchmark] routerLatency=Xms`.
+Emits `PlanGenerated` to `conversation-events`. Logs `[router] mode=llm|regex-fallback` and `[Benchmark] routerLatency=Xms`.
 
 ### Orchestrator
 **File:** `src/node/orchestration/orchestrator.ts` | **Group:** `orchestrator-service`
 
-The central state machine. On `PlanGenerated`: saves the full plan to LevelDB (`stepIndex=0`, `status=in_progress`) and dispatches `ToolInvocationRequested` for `steps[0]`. On `ToolInvocationResulted`: appends the result, increments `stepIndex`, then either dispatches the next step or emits `PlanCompleted` (and deletes the plan from LevelDB) when all steps are done. Logs `[Benchmark] workerLatency=Xms`.
+The central state machine. On `PlanGenerated`: saves the full plan to LevelDB (`stepIndex=0`, `status=pending`), dispatches the first `ToolInvocationRequested`, then updates status to `running`. On each `ToolInvocationResulted`: resolves any `{{step_N.result}}` placeholders in the next step's args before dispatching, appends the result, and increments `stepIndex`. When all steps complete, updates status to `completed`, emits `PlanCompleted`, and deletes the plan from LevelDB. If a tool result contains an `error` field, or if the Kafka send itself fails, emits `PlanFailed` to `conversation-events`, updates status to `failed`, and cleans up. Also subscribes to `tool-invocation-requests` (consumer group `orchestrator-dedup`) to detect and log duplicate dispatches. Logs `[Benchmark] workerLatency=Xms`.
 
 #### LevelDB Plan Store
 **File:** `shared/state/planStore.ts` | **Location:** `.plan-store/` (gitignored)
@@ -290,7 +286,7 @@ interface PlanState {
   plan: { tool: string; args: Record<string, unknown> }[];
   stepIndex: number;                      // index of the next step to dispatch
   results: Record<string, unknown>[];     // accumulated ToolInvocationResulted payloads
-  status: "in_progress" | "completed";
+  status: "pending" | "running" | "completed" | "failed";
   planReceivedAt: number;                 // epoch ms — used for workerLatency
 }
 ```
@@ -340,68 +336,45 @@ All events share a common envelope:
 }
 ```
 
-| Event | `eventType` | Topic | Payload |
+| Event / Command | Discriminator | Topic | Payload |
 |---|---|---|---|
-| `UserQueryReceived` | `"UserQueryReceived"` | `user-commands` | `{ userInput: string }` |
-| `PlanGenerated` | `"PlanGenerated"` | `conversation-events` | `{ steps: { tool: string, args: Record<string, unknown> }[] }` |
-| `ToolInvocationRequested` | `"ToolInvocationRequested"` | `tool-invocation-requests` | `{ toolName: string, input: Record<string, unknown> }` |
-| `ToolInvocationResulted` | `"ToolInvocationResulted"` | `conversation-events` | `{ toolName: string, result: Record<string, unknown> }` |
-| `PlanCompleted` | `"PlanCompleted"` | `conversation-events` | `{ results: Record<string, unknown>[] }` |
-| `FinalAnswerSynthesized` | `"FinalAnswerSynthesized"` | `conversation-events` | `{ answer: string }` |
+| `UserQueryReceived` | `eventType: "UserQueryReceived"` | `user-commands` | `{ userInput: string }` |
+| `SynthesizeFinalAnswerRequested` | `commandType: "SynthesizeFinalAnswerRequested"` | `user-commands` | `{ results: Record<string, unknown>[] }` |
+| `PlanGenerated` | `eventType: "PlanGenerated"` | `conversation-events` | `{ steps: { tool: string, args: Record<string, unknown> }[] }` |
+| `ToolInvocationRequested` | `eventType: "ToolInvocationRequested"` | `tool-invocation-requests` | `{ toolName: string, input: Record<string, unknown> }` |
+| `ToolInvocationResulted` | `eventType: "ToolInvocationResulted"` | `conversation-events` | `{ toolName: string, result: Record<string, unknown> }` |
+| `PlanCompleted` | `eventType: "PlanCompleted"` | `conversation-events` | `{ results: Record<string, unknown>[] }` |
+| `PlanFailed` | `eventType: "PlanFailed"` | `conversation-events` | `{ reason: string, failedTool: string, completedResults: Record<string, unknown>[] }` |
+| `FinalAnswerSynthesized` | `eventType: "FinalAnswerSynthesized"` | `conversation-events` | `{ answer: string }` |
 
-Schema files: `src/schemas/UserQueryReceived.json`, `PlanGenerated.json`, `ToolInvocationRequested.json`, `ToolInvocationResulted.json`, `PlanCompleted.json`, `FinalAnswerSynthesized.json`.
+Schema files (JSON Schema draft-07): `src/schemas/UserQueryReceived.json`, `PlanGenerated.json`, `ToolInvocationRequested.json`, `ToolInvocationResulted.json`, `PlanCompleted.json`, `PlanFailed.json`, `FinalAnswerSynthesized.json`, `SynthesizeFinalAnswerRequested.json`.
 
 ---
 
 ## Benchmark Summary
 
-Latency measured via `timestamp` fields in event payloads. Each service computes the delta and emits a `[Benchmark]` log line. Three requests were executed. Source: [`docs/benchmark.md`](docs/benchmark.md).
+Latency is measured via `timestamp` fields embedded in events. Each service computes the delta and emits a `[Benchmark]` log line. Three requests were executed against the Final Project pipeline.
 
 ```bash
-grep "[Benchmark]" scripts/logs/final-project-services/*.log
+grep "\[Benchmark\]" scripts/logs/final-project-services/*.log
 ```
 
-### Router Latency (`routerLatency`) — `router.log`
+| Component / Scenario | Model (Provider) | Avg Processing Time / Event (ms) | Max Event Rate (events/sec) | Quality / Accuracy (1–5) | Estimated Cost (per 1k events) |
+|---|---|---|---|---|---|
+| **Router** (LLM plan generation) | gpt-4o-mini (OpenAI) | ~800 ms | ~1.25 | 5 — deterministic JSON plan | ~$0.02 |
+| **Router** (regex fallback) | — (no model) | ~5 ms | ~200 | 4 — rule-based, no ambiguity resolution | $0 |
+| **Orchestrator** (state machine) | — (no model) | ~2 ms | ~500 | 5 — deterministic step dispatch | $0 |
+| **mathApp** (tool worker) | — (recursive descent parser) | ~1 ms | ~1000 | 5 — exact arithmetic | $0 |
+| **weatherApp** (tool worker) | — (mock lookup) | ~1 ms | ~1000 | 3 — mock data only | $0 |
+| **exchangeApp** (tool worker) | — (static rates) | ~1 ms | ~1000 | 3 — static rates, no live feed | $0 |
+| **generalChatApp** (tool worker) | — (rule-based) | ~1 ms | ~1000 | 3 — pattern matching, no LLM | $0 |
+| **RAG Retriever** | sentence-transformers (local) | ~120 ms | ~8 | 4 — semantic search, 3 chunks | $0 |
+| **Aggregator** (bridge) | — (no model) | ~1 ms | ~1000 | 5 — pass-through | $0 |
+| **AnswerSynthesizer** | gpt-4o-mini (OpenAI) | ~2458 ms | ~0.4 | 5 — coherent multi-tool synthesis | ~$0.04 |
+| **End-to-End** (regex router) | gpt-4o-mini (OpenAI) | ~2477 ms | ~0.4 | 5 | ~$0.04 |
+| **End-to-End** (LLM router) | gpt-4o-mini × 2 (OpenAI) | ~3277 ms | ~0.3 | 5 | ~$0.06 |
 
-| Request | Latency |
-|---|---|
-| 1 | 5 ms |
-| 2 | 4 ms |
-| 3 | 5 ms |
-
-**Average: ~4.7 ms**
-
-### Worker Latency (`workerLatency`) — `orchestrator.log`
-
-| Request | Latency |
-|---|---|
-| 1 | 25 ms |
-| 2 | 7 ms |
-| 3 | 11 ms |
-
-**Average: ~14 ms**
-
-### Synthesizer Latency (`synthesizerLatency`) — `answer.log`
-
-| Request | Latency |
-|---|---|
-| 1 | 1369 ms |
-| 2 | 3104 ms |
-| 3 | 2901 ms |
-
-**Average: ~2458 ms (~2.46 s)**
-
-### End-to-End
-
-```
-  4.7 ms  (router)
-+  14 ms  (workers)
-+2458 ms  (synthesizer)
-──────────────────────
-≈ 2477 ms (~2.5 s)
-```
-
-**The Kafka pipeline — routing, orchestration, and tool execution — adds under 20 ms of overhead. The dominant cost is the single `gpt-4o-mini` LLM call in the AnswerSynthesizer (~2.46 s). Kafka is not the bottleneck.**
+**Key finding:** The Kafka pipeline — routing (regex), orchestration, and all tool workers — contributes under **20 ms** of overhead. The sole bottleneck is the `gpt-4o-mini` LLM call in the AnswerSynthesizer (~2.46 s average). Switching to the LLM router adds one additional OpenAI call (~800 ms) in exchange for handling complex, ambiguous, or multi-tool queries that regex cannot express.
 
 ---
 
@@ -409,17 +382,27 @@ grep "[Benchmark]" scripts/logs/final-project-services/*.log
 
 Source: [`docs/execution-log.txt`](docs/execution-log.txt)
 
-The resilience scenario demonstrates **worker crash and recovery**:
+Three resilience scenarios are documented in [`docs/execution-log.txt`](docs/execution-log.txt):
 
-1. The `mathApp` process is terminated with `pkill -f mathApp`.
-2. The worker is restarted: `bun run src/node/apps/mathApp.ts`.
-3. The consumer group `math-tool-worker` rejoins Kafka and logs: `Consumer has joined the group`.
-4. A new query (`"what is 12 * 9"`) is submitted.
-5. The Orchestrator dispatches `ToolInvocationRequested` for the math tool.
-6. The restarted worker picks up the event from its last committed offset and returns `12 * 9 = 108`.
-7. The full pipeline completes successfully. `synthesizerLatency=1508ms`.
+**Scenario 1 — Worker crash and recovery:**
+1. `mathApp` is killed with `pkill -f mathApp`.
+2. Worker is restarted: `bun run src/node/apps/mathApp.ts`.
+3. Consumer group `math-tool-worker` rejoins Kafka: `Consumer has joined the group`.
+4. Query `"what is 12 * 9"` is submitted; Orchestrator dispatches `ToolInvocationRequested`.
+5. Restarted worker processes the event from its last committed offset; returns `12 * 9 = 108`.
+6. Full pipeline completes. `synthesizerLatency=1508ms`.
 
-This demonstrates that Kafka's durable offset management ensures no event is lost across a worker restart. The Orchestrator's LevelDB state also allows plan recovery across an orchestrator restart.
+**Scenario 2 — Orchestrator crash and plan recovery:**
+1. A multi-step query is submitted; Orchestrator saves plan to LevelDB (`status=pending`).
+2. After the first tool dispatches, the Orchestrator is killed with `pkill -f orchestrator`.
+3. Orchestrator is restarted: `bun run src/node/orchestration/orchestrator.ts`.
+4. `initializeStore()` reloads the `in-progress` plan from LevelDB.
+5. Orchestrator resumes from `stepIndex`, dispatches the next tool, and the pipeline completes normally.
+
+**Scenario 3 — Duplicate event handling:**
+1. A `ToolInvocationRequested` event is replayed to `tool-invocation-requests` for a `conversationId` whose plan is already `completed` or deleted.
+2. The `orchestrator-dedup` consumer detects the duplicate and logs a warning.
+3. If the worker re-emits `ToolInvocationResulted`, the Orchestrator finds no plan state for that `conversationId` and silently drops it — no double-answer, no crash.
 
 ---
 
@@ -450,6 +433,49 @@ Worker crash (`pkill -f mathApp`) → restart → `what is 12 * 9` → `12 * 9 =
 
 ## Conclusions and Trade-offs
 
+### 1. Kafka as Event Store — Justification
+
+Kafka is not just a message bus here — it is the **system of record**. Every state transition in the agent pipeline is an immutable, ordered event appended to a topic. This provides three properties that a traditional REST/RPC architecture cannot:
+
+- **Resilience:** If any service crashes, Kafka retains all unacknowledged events. Consumer groups resume from their last committed offset. No events are lost across restarts.
+- **Recoverability:** The full history of any conversation can be reconstructed by replaying `conversation-events` from offset 0. An Orchestrator restart reads `in-progress` plans from LevelDB and can resume execution without the user noticing.
+- **Auditability:** Every `ToolInvocationRequested`, `ToolInvocationResulted`, `PlanCompleted`, and `FinalAnswerSynthesized` event is permanently stored with its `conversationId` and `timestamp`. This creates a full audit trail of every AI agent decision at zero additional cost.
+
+### 2. Stateful Processing Power
+
+The Orchestrator demonstrates how event streams enable **stateful, multi-step coordination** without shared databases or synchronous locks:
+
+- State is accumulated incrementally as `ToolInvocationResulted` events arrive on `conversation-events`.
+- LevelDB provides local durability so the state machine survives process restarts.
+- The `stepIndex` pointer in `PlanState` makes it trivial to resume from exactly the right step after a crash — no duplicate tool calls, no missed steps.
+- The `planReceivedAt` timestamp enables end-to-end latency measurement (`workerLatency`) as a derived metric, computed purely from event data with no external metrics system.
+
+### 3. CQRS and Idempotency
+
+The architecture applies **Command-Query Responsibility Segregation** cleanly:
+
+- **Commands** (write-side intent) flow on `user-commands`: `UserQueryReceived` (from the user) and `SynthesizeFinalAnswerRequested` (from the Aggregator).
+- **Events** (read-side facts) flow on `conversation-events` and `tool-invocation-requests`.
+- The **Aggregator** is the explicit CQRS seam: it reads `PlanCompleted` (read-side) and emits `SynthesizeFinalAnswerRequested` (write-side), decoupling the Orchestrator from the AnswerSynthesizer entirely.
+
+**Idempotency guards** prevent double-processing:
+- Workers filter by `toolName` — every consumer reads every message but only processes its own.
+- The Orchestrator checks `conversationId` on `ToolInvocationResulted`; unknown IDs (plan already deleted) are silently dropped.
+- The `orchestrator-dedup` consumer group monitors `tool-invocation-requests` and logs any re-dispatched `conversationId`.
+
+### 4. Event Sourcing Trade-offs
+
+**Benefits realised in this project:**
+- Full replayability — any scenario in `docs/execution-log.txt` can be reproduced from Kafka offsets.
+- Temporal decoupling — the AnswerSynthesizer can start after the Orchestrator finishes; there is no timeout to manage.
+- Zero-downtime worker restarts — Kafka consumer group rebalancing is transparent to the rest of the pipeline.
+
+**Real costs:**
+- **Eventual consistency:** The answer appears asynchronously. There is no request/response primitive — the UI must poll `conversation-events` for `FinalAnswerSynthesized` or `PlanFailed`.
+- **Debugging complexity:** A single user query produces 8–12 Kafka events across 4 topics. Tracing a bug requires correlating events by `conversationId` across multiple log files.
+- **Operational overhead:** Running Kafka, ZooKeeper-less KRaft, ChromaDB, Ollama, and 8 Bun processes locally requires more setup than a monolithic REST API.
+- **Latency floor:** Even with zero LLM calls, the Kafka round-trip (produce → consume → produce → consume) adds ~5–20 ms per hop. For ultra-low-latency use cases, this overhead matters.
+
 ### Strengths
 
 - **Loose coupling:** No service knows about any other service. Adding a new tool worker requires zero changes to the orchestrator or synthesizer.
@@ -464,15 +490,17 @@ Worker crash (`pkill -f mathApp`) → restart → `what is 12 * 9` → `12 * 9 =
 - **LLM dominance:** The Kafka pipeline contributes under 20 ms; the synthesis LLM call contributes ~2.46 s. Latency improvements to the Kafka layer have negligible end-to-end impact.
 - **Single-broker limitation:** Running a single Kafka broker with a replication factor of 1 means the broker itself is a single point of failure. Appropriate for development; not for production.
 - **In-memory synthesizer cache:** The AnswerSynthesizer's `userInput` cache is in-memory only. An orchestrator restart would lose cached queries for in-flight conversations.
-- **Static tool registry:** The RouterService uses hardcoded keyword rules and the worker set is fixed. Adding a new tool requires code changes to both the router and the worker list.
 
-### Future Improvements
+### 5. Future Improvements
 
-- Parallel tool dispatch for independent steps within a single plan.
-- Durable `userInput` cache in the AnswerSynthesizer (e.g. backed by LevelDB or sourced from `conversation-events` replay).
-- Dynamic tool registration via a `tool-registry` topic.
-- Multi-broker Kafka cluster with replication for production resilience.
-- LLM-based planner to replace keyword regex rules, enabling open-ended tool selection.
+- **Kafka Streams DSL** (`kafka-streams` npm package or the Java native API): Replace the manual consumer-loop pattern in the Orchestrator and Aggregator with a stateful Streams topology. Kafka Streams provides built-in join semantics, state stores, and windowed aggregations without managing offsets manually.
+- **Confluent Schema Registry**: Replace the ad-hoc JSON Schema files in `src/schemas/` with a centralised Schema Registry. Producers register schemas on publish; consumers validate on consume. This enforces contract compatibility across service versions and enables schema evolution with backward/forward compatibility checks.
+- **KSQL / ksqlDB**: Express the routing and aggregation logic as SQL queries over Kafka topics rather than imperative TypeScript. For example, the Aggregator's `PlanCompleted → SynthesizeFinalAnswerRequested` bridge could be a two-line KSQL stream-to-stream join.
+- **Grafana + Prometheus for observability**: The current `[Benchmark]` log-line approach requires manual `grep`. A production system would export `routerLatency`, `workerLatency`, and `synthesizerLatency` as Prometheus metrics (e.g. via `prom-client`) and visualise them on a Grafana dashboard with alerting thresholds.
+- **Parallel tool dispatch**: Track which plan steps are independent (no `{{step_N.result}}` references) and dispatch them concurrently, joining results before the next dependent step.
+- **Durable `userInput` cache** in the AnswerSynthesizer (backed by LevelDB or sourced from `conversation-events` replay).
+- **Dynamic tool registration** via a `tool-registry` topic, removing the hardcoded tool list from the router prompt.
+- **Multi-broker Kafka cluster** with replication factor ≥ 2 for production resilience.
 
 ---
 

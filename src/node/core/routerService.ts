@@ -19,6 +19,8 @@ import type {
 import type { ConversationHistory } from "../../../shared/types/conversation";
 import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
+import { callLLM } from "../../../shared/llm/openai";
+import { routerPlanPrompt } from "../../../shared/prompts/routerPlanPrompt";
 
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 
@@ -181,7 +183,7 @@ const PLAN_EXCHANGE_REGEX = /\b(exchange|convert|USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD
 const EXTRACT_CURRENCIES  = /\b(USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/gi;
 const EXTRACT_AMOUNT      = /\b(\d+(?:\.\d+)?)\s+(?:USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
 
-function generatePlan(userInput: string): PlanStep[] {
+function generatePlanRegex(userInput: string): PlanStep[] {
   const steps: PlanStep[] = [];
 
   if (PLAN_WEATHER_REGEX.test(userInput)) {
@@ -214,12 +216,45 @@ function generatePlan(userInput: string): PlanStep[] {
   return steps;
 }
 
+const VALID_TOOLS = new Set(["weather", "exchange", "math", "chat", "getProductInformation"]);
+
+async function generatePlanLLM(userInput: string): Promise<PlanStep[]> {
+  try {
+    const raw = await callLLM(routerPlanPrompt(userInput));
+    const parsed = JSON.parse(raw);
+
+    if (
+      !parsed ||
+      !Array.isArray(parsed.steps) ||
+      parsed.steps.length === 0 ||
+      !parsed.steps.every(
+        (s: unknown) =>
+          typeof s === "object" &&
+          s !== null &&
+          typeof (s as Record<string, unknown>).tool === "string" &&
+          VALID_TOOLS.has((s as Record<string, unknown>).tool as string) &&
+          typeof (s as Record<string, unknown>).args === "object" &&
+          (s as Record<string, unknown>).args !== null
+      )
+    ) {
+      throw new Error("Invalid plan shape");
+    }
+
+    const steps: PlanStep[] = parsed.steps;
+    console.log(`[router] mode=llm steps=[${steps.map((s) => s.tool).join(", ")}]`);
+    return steps;
+  } catch (err) {
+    console.log(`[router] mode=regex-fallback reason="${(err as Error).message}"`);
+    return generatePlanRegex(userInput);
+  }
+}
+
 async function routePlan(
   producer: Awaited<ReturnType<typeof createProducer>>,
   event: UserQueryReceived
 ): Promise<void> {
   const { conversationId, payload } = event;
-  const steps = generatePlan(payload.userInput);
+  const steps = await generatePlanLLM(payload.userInput);
 
   const planEvent: PlanGenerated = {
     conversationId,

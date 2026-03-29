@@ -18,7 +18,7 @@ from sentence_transformers import SentenceTransformer
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 PRODUCTS_DIR = REPO_ROOT / "data" / "products"
 CHROMA_DIR = Path(__file__).resolve().parent / "chroma_db"
 

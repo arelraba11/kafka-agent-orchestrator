@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "SynthesizeFinalAnswerRequested",
+  "title": "SynthesizeFinalAnswerRequested",
+  "description": "Command emitted by Aggregator to trigger final answer synthesis",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "commandType", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "description": "Unique identifier shared across all events in one request"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix epoch milliseconds at time of production"
+    },
+    "commandType": {
+      "type": "string",
+      "const": "SynthesizeFinalAnswerRequested"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["results"],
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "description": "Accumulated tool invocation results",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

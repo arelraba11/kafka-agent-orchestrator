@@ -107,22 +107,39 @@ subscribeAndRun(
 
     console.log(`[weather] tool conversationId=${conversationId} city="${city}"`);
 
-    const data = getMockWeather(city);
-    const resultStr = formatResult(city, data);
+    try {
+      const data = getMockWeather(city);
+      const resultStr = formatResult(city, data);
 
-    console.log(`[weather] tool result="${resultStr}"`);
+      console.log(`[weather] tool result="${resultStr}"`);
 
-    const event: ToolInvocationResulted = {
-      conversationId,
-      timestamp: Date.now(),
-      eventType: "ToolInvocationResulted",
-      payload: {
-        toolName: "weather",
-        result: { value: resultStr, city, temp: data.temp, condition: data.condition, success: true },
-      },
-    };
+      const event: ToolInvocationResulted = {
+        conversationId,
+        timestamp: Date.now(),
+        eventType: "ToolInvocationResulted",
+        payload: {
+          toolName: "weather",
+          result: { value: resultStr, city, temp: data.temp, condition: data.condition, success: true },
+        },
+      };
 
-    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[weather] tool error="${errorMsg}"`);
+
+      const event: ToolInvocationResulted = {
+        conversationId,
+        timestamp: Date.now(),
+        eventType: "ToolInvocationResulted",
+        payload: {
+          toolName: "weather",
+          result: { value: "", success: false, error: errorMsg },
+        },
+      };
+
+      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+    }
   }
 ).catch(err => console.error("[weather] Tool worker error:", err));
 

@@ -9,6 +9,7 @@ import { TOPICS } from "../../../shared/topics";
 import type { UserInputEvent, UserControlEvent, BotResponseEvent } from "../../../shared/types/events";
 import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
+import type { PlanFailed } from "../../../shared/schemas/PlanFailed";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -40,9 +41,14 @@ subscribeAndRun(
   consumerFinalAnswer,
   [TOPICS.CONVERSATION_EVENTS],
   async (_topic, _key, value) => {
-    const event = value as FinalAnswerSynthesized;
-    if (event.eventType !== "FinalAnswerSynthesized") return;
-    console.log(`\nbot: ${event.payload.answer}\n> `);
+    const event = value as { eventType: string };
+    if (event.eventType === "FinalAnswerSynthesized") {
+      const e = value as FinalAnswerSynthesized;
+      console.log(`\nbot: ${e.payload.answer}\n> `);
+    } else if (event.eventType === "PlanFailed") {
+      const e = value as PlanFailed;
+      console.log(`\nPlan failed: ${e.payload.reason} (tool: ${e.payload.failedTool})\n> `);
+    }
   }
 ).catch(err => console.error("[ui] Final answer consumer error:", err));
 

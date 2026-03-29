@@ -71,6 +71,10 @@ sleep 1
 
 bun run src/node/orchestration/answerSynthesizer.ts     > "$LOG_DIR/answer.log"       2>&1 &
 echo "Started answerSynthesizer (PID $!)"
+sleep 1
+
+src/python/venv/bin/python src/python/rag/rag_retriever.py > "$LOG_DIR/rag.log"        2>&1 &
+echo "Started rag_retriever (PID $!)"
 
 echo ""
 echo "FINAL PROJECT SERVICES STARTED"

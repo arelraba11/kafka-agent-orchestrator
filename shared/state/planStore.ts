@@ -8,7 +8,7 @@ export interface PlanState {
   plan: PlanStep[];                  // ordered steps with tool name + args
   stepIndex: number;                 // index of the next step to dispatch
   results: Record<string, unknown>[]; // accumulated tool results
-  status: "in_progress" | "completed";
+  status: "pending" | "running" | "completed" | "failed";
   planReceivedAt: number;            // epoch ms — used for latency benchmarking
 }
 

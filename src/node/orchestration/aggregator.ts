@@ -7,17 +7,7 @@ import {
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
-
-// ─── Command type ─────────────────────────────────────────────────────────────
-
-interface SynthesizeFinalAnswerRequested {
-  conversationId: string;
-  timestamp: number;
-  commandType: "SynthesizeFinalAnswerRequested";
-  payload: {
-    results: Record<string, unknown>[];
-  };
-}
+import type { SynthesizeFinalAnswerRequested } from "../../../shared/schemas/SynthesizeFinalAnswerRequested";
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 

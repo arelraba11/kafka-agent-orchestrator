@@ -151,21 +151,38 @@ subscribeAndRun(
 
     console.log(`[chat] tool conversationId=${conversationId} input="${userInput}"`);
 
-    const resultStr = generateResponse(userInput, context);
+    try {
+      const resultStr = generateResponse(userInput, context);
 
-    console.log(`[chat] tool result="${resultStr}"`);
+      console.log(`[chat] tool result="${resultStr}"`);
 
-    const event: ToolInvocationResulted = {
-      conversationId,
-      timestamp: Date.now(),
-      eventType: "ToolInvocationResulted",
-      payload: {
-        toolName: "chat",
-        result: { value: resultStr, success: true },
-      },
-    };
+      const event: ToolInvocationResulted = {
+        conversationId,
+        timestamp: Date.now(),
+        eventType: "ToolInvocationResulted",
+        payload: {
+          toolName: "chat",
+          result: { value: resultStr, success: true },
+        },
+      };
 
-    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[chat] tool error="${errorMsg}"`);
+
+      const event: ToolInvocationResulted = {
+        conversationId,
+        timestamp: Date.now(),
+        eventType: "ToolInvocationResulted",
+        payload: {
+          toolName: "chat",
+          result: { value: "", success: false, error: errorMsg },
+        },
+      };
+
+      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+    }
   }
 ).catch(err => console.error("[chat] Tool worker error:", err));
 

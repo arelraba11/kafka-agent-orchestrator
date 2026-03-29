@@ -184,35 +184,40 @@ def run() -> None:
             f'query="{query}"'
         )
 
-        t_start = time.time()
-        chunks = retrieve(model, collection, query)
-        latency_ms = round((time.time() - t_start) * 1000, 1)
+        try:
+            t_start = time.time()
+            chunks = retrieve(model, collection, query)
+            latency_ms = round((time.time() - t_start) * 1000, 1)
 
-        if chunks:
-            top_source = chunks[0]["source"]
-            top_score = chunks[0]["relevance_score"]
-            print(
-                f"[rag_retriever] Retrieved {len(chunks)} chunks in {latency_ms}ms "
-                f"(top: source={top_source}, score={top_score})"
+            if chunks:
+                top_source = chunks[0]["source"]
+                top_score = chunks[0]["relevance_score"]
+                print(
+                    f"[rag_retriever] Retrieved {len(chunks)} chunks in {latency_ms}ms "
+                    f"(top: source={top_source}, score={top_score})"
+                )
+            else:
+                print(f"[rag_retriever] No chunks retrieved for query: \"{query}\"")
+
+            # Build combined context string for the synthesizer
+            context = "\n\n---\n\n".join(
+                f"[{c['source']}]\n{c['content']}" for c in chunks
             )
-        else:
-            print(f"[rag_retriever] No chunks retrieved for query: \"{query}\"")
 
-        # Build combined context string for the synthesizer
-        context = "\n\n---\n\n".join(
-            f"[{c['source']}]\n{c['content']}" for c in chunks
-        )
+            result = {
+                "query": query,
+                "context": context,
+                "chunks": chunks,
+                "tool": TOOL_NAME,
+                "retrieval_latency_ms": latency_ms,
+                "success": True,
+            }
 
-        result = {
-            "query": query,
-            "context": context,
-            "chunks": chunks,
-            "tool": TOOL_NAME,
-            "retrieval_latency_ms": latency_ms,
-            "success": True,
-        }
-
-        emit_result(producer, conversation_id, result)
+            emit_result(producer, conversation_id, result)
+        except Exception as exc:
+            error_msg = str(exc)
+            print(f"[rag_retriever] Error processing query: {error_msg}")
+            emit_result(producer, conversation_id, {"error": error_msg, "success": False})
 
 
 if __name__ == "__main__":

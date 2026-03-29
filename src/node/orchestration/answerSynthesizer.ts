@@ -10,17 +10,7 @@ import { callLLM } from "../../../shared/llm/openai";
 import { synthesisPrompt } from "../../../shared/prompts/synthesisPrompt";
 import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
-
-// ─── Command type (emitted by Aggregator to user-commands) ────────────────────
-
-interface SynthesizeFinalAnswerRequested {
-  conversationId: string;
-  timestamp: number;
-  commandType: "SynthesizeFinalAnswerRequested";
-  payload: {
-    results: Record<string, unknown>[];
-  };
-}
+import type { SynthesizeFinalAnswerRequested } from "../../../shared/schemas/SynthesizeFinalAnswerRequested";
 
 // ─── User query cache ─────────────────────────────────────────────────────────
 // user-commands carries both UserQueryReceived and SynthesizeFinalAnswerRequested.

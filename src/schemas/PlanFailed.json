@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "PlanFailed",
+  "title": "PlanFailed",
+  "description": "Event emitted by Orchestrator when a plan cannot be completed",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "eventType", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "description": "Unique identifier shared across all events in one request"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix epoch milliseconds at time of production"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "PlanFailed"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["reason", "failedTool", "completedResults"],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Human-readable description of why the plan failed"
+        },
+        "failedTool": {
+          "type": "string",
+          "description": "Name of the tool that caused the failure"
+        },
+        "completedResults": {
+          "type": "array",
+          "description": "Results from steps that completed before the failure",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}
