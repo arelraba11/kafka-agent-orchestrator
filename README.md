@@ -425,9 +425,15 @@ Three orchestration scenarios and two RAG scenarios were executed and logged in 
 | Tesla Model 3 | `tell me about the tesla model 3` | Product context retrieved from ChromaDB; summary covering performance, range, autopilot · synthesizerLatency=3466ms |
 | MacBook | `what can you tell me about the macbook` | Product context retrieved; summary covering MacBook Air, MacBook Pro, macOS · synthesizerLatency=3085ms |
 
-### Resilience Scenario
+### Resilience Scenarios
 
-Worker crash (`pkill -f mathApp`) → restart → `what is 12 * 9` → `12 * 9 = 108` → successful recovery. synthesizerLatency=1508ms.
+Three scenarios are fully logged in [`docs/execution-log.txt`](docs/execution-log.txt) and summarised in the [Resilience Summary](#resilience-summary) section above:
+
+| Scenario | Method | Result |
+|---|---|---|
+| Worker crash + recovery | `pkill -f mathApp` → restart | Consumer group rejoins; pending event processed from last offset |
+| Orchestrator crash + recovery | `pkill -f orchestrator` → restart | LevelDB reloads in-progress plan; execution resumes from `stepIndex` |
+| Duplicate event handling | Manual re-produce to `tool-invocation-requests` | `orchestrator-dedup` warns; `ToolInvocationResulted` silently dropped (plan deleted) |
 
 ---
 

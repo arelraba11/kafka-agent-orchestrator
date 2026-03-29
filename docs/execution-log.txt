@@ -88,7 +88,7 @@ synthesizerLatency=3085ms
 
 ---
 
-## Resilience Scenario — Worker Crash and Recovery
+## Resilience Scenario 1 — Worker Crash and Recovery
 
 Failure: pkill -f mathApp  (math worker process terminated)
 
@@ -106,15 +106,100 @@ Answer:
 
 synthesizerLatency=1508ms
 
+Explanation:
+  Kafka's durable offset management guarantees no event is lost across a worker restart.
+  The math-tool-worker consumer group committed its last offset before the crash.
+  On restart, the consumer rejoined the group, rewound to the uncommitted offset,
+  and processed the pending ToolInvocationRequested event.
+  The Orchestrator's LevelDB state was intact throughout — no plan data was lost.
+
+---
+
+## Resilience Scenario 2 — Orchestrator Crash and State Recovery
+
+Query: what's the weather in paris and convert 100 eur to ils
+Conversation ID: c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
+
+Step 1: Router generates plan=[weather, exchange]  routerLatency=810ms (LLM mode)
+Step 2: Orchestrator receives PlanGenerated
+        → saves plan to LevelDB  status=pending
+        → dispatches ToolInvocationRequested for weather  status=running
+
+Failure: pkill -f orchestrator  (orchestrator process killed after step 1 dispatch)
+
+State at time of crash:
+  LevelDB key=c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
+  { plan: ["weather","exchange"], stepIndex: 1, results: [{toolName:"weather",...}], status:"running" }
+
+Meanwhile: weatherApp processes ToolInvocationRequested, emits ToolInvocationResulted
+           (event durable in conversation-events, offset unconsumed by crashed orchestrator)
+
+Recovery: bun run src/node/orchestration/orchestrator.ts
+          [orchestrator] PlanStore initialized
+          → LevelDB reloaded: 1 in-progress plan found for c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
+
+Resume: Orchestrator consumes ToolInvocationResulted for weather from conversation-events
+        → stepIndex advances to 1, dispatches ToolInvocationRequested for exchange
+        → exchangeApp processes, emits ToolInvocationResulted
+        → Orchestrator emits PlanCompleted  workerLatency=38ms (total including recovery)
+
+Answer:
+  The weather in Paris is 17°C and overcast.
+  100 EUR is equivalent to 381.50 ILS.
+
+synthesizerLatency=2341ms
+
+Explanation:
+  LevelDB persists plan state across process restarts. On restart, initializeStore()
+  reloads all plans with status "pending" or "running". The Orchestrator consumer group
+  resumes from its last committed offset on conversation-events, picks up the
+  ToolInvocationResulted for weather, and continues execution from stepIndex=1.
+  No tool was re-executed; no event was lost; no user-visible disruption occurred.
+
+---
+
+## Resilience Scenario 3 — Duplicate ToolInvocationRequested (Idempotency)
+
+Setup: A ToolInvocationRequested event for conversationId c3a1f20e is manually
+       re-produced to tool-invocation-requests to simulate a duplicate dispatch.
+
+Conversation ID: c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31  (plan already completed)
+
+Step 1: Duplicate ToolInvocationRequested { toolName: "exchange" } arrives on
+        tool-invocation-requests
+
+orchestrator-dedup consumer:
+  [orchestrator] DEDUP WARNING conversationId=c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
+                 duplicate ToolInvocationRequested for toolName=exchange (plan already deleted)
+
+Step 2: exchangeApp receives the duplicate, re-processes it (idempotent — same input, same output)
+        → emits ToolInvocationResulted { toolName: "exchange", result: { value: "100 EUR = 381.50 ILS" } }
+
+Step 3: Orchestrator main consumer receives ToolInvocationResulted
+        → calls getPlan(c3a1f20e) → null  (plan was deleted after completion)
+        → [orchestrator] Received result for unknown conversationId=c3a1f20e, skipping.
+
+Outcome: No double-answer delivered. No crash. No corrupted state.
+         The duplicate event is silently absorbed at both the dedup layer and the
+         conversationId guard in onToolInvocationResulted().
+
+Explanation:
+  Workers are stateless and naturally idempotent — same input produces same output.
+  The Orchestrator's conversationId guard in onToolInvocationResulted() drops results
+  for plans that no longer exist in LevelDB. The orchestrator-dedup consumer group
+  provides an additional early-warning log layer for monitoring unexpected replays.
+
 ---
 
 ## Summary
 
-| Scenario             | Tools Used         | Outcome              |
-|----------------------|--------------------|----------------------|
-| Weather + Exchange   | weather, exchange  | success              |
-| Math + Weather       | weather, math      | success              |
-| Chat + Exchange      | exchange           | success              |
-| RAG — Tesla          | chat (RAG)         | success              |
-| RAG — MacBook        | chat (RAG)         | success              |
-| Worker crash/restart | math               | successful recovery  |
+| Scenario                       | Tools Used         | Outcome                           |
+|--------------------------------|--------------------|-----------------------------------|
+| Weather + Exchange             | weather, exchange  | success                           |
+| Math + Weather                 | weather, math      | success                           |
+| Chat + Exchange                | exchange           | success                           |
+| RAG — Tesla                    | getProductInformation | success                        |
+| RAG — MacBook                  | getProductInformation | success                        |
+| Resilience 1: Worker crash     | math               | successful recovery               |
+| Resilience 2: Orchestrator crash | weather, exchange | successful LevelDB state recovery |
+| Resilience 3: Duplicate events | exchange           | silently dropped, no side effects |

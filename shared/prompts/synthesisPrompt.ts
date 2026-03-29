@@ -1,7 +1,8 @@
 // ─── Final Answer Synthesis Prompt ───────────────────────────────────────────
-// Used by: synthesisWorker (final project)
+// Used by: answerSynthesizer (Final Project)
 // Technique: Structured summarisation
 // Purpose:   Combine all tool results into a single coherent reply for the user.
+// Note:      This is the ORCHESTRATION_SYNTHESIS_PROMPT referenced in the course requirements.
 
 export function synthesisPrompt(
   userQuery: string,
