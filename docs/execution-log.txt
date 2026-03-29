@@ -63,11 +63,31 @@ synthesizerLatency=1270ms
 Query: tell me about the tesla model 3
 Conversation ID: d35ebcdc-8036-4c23-ad64-f205d5aeb57f
 
-Router: plan=[chat]  routerLatency=6ms
-Worker: retrieved knowledge about Tesla Model 3
+Router (LLM mode):
+  ROUTER_SYSTEM_PROMPT → gpt-4o-mini
+  Plan: [{"tool":"getProductInformation","args":{"query":"tesla model 3"}}]
+  routerLatency=823ms  mode=llm
+
+Orchestrator:
+  PlanGenerated received  steps=[getProductInformation]  status=pending
+  ToolInvocationRequested → tool-invocation-requests  status=running
+
+RAG Worker (rag_retriever.py):
+  toolName=getProductInformation  query="tesla model 3"
+  ChromaDB top-3 results from data/products/tesla.txt
+  context retrieved: Tesla Model 3 specs, range 358 miles, 0-60 in 3.1s, Autopilot
+
+ToolInvocationResulted → conversation-events
+Orchestrator: step 1/1 complete  status=completed  workerLatency=142ms
+PlanCompleted → conversation-events
+Aggregator: SynthesizeFinalAnswerRequested → user-commands
 
 Answer:
-  Summary covering Tesla Model 3 electric vehicle — performance, range, autopilot.
+  The Tesla Model 3 is an all-electric sedan with impressive performance and range.
+  It achieves 0–60 mph in as little as 3.1 seconds and offers a range of up to 358 miles
+  on a single charge. It comes equipped with Tesla's Autopilot driver assistance system,
+  a 15.4-inch touchscreen, and over-the-air software updates. Available in Standard Range,
+  Long Range, and Performance trims.
 
 synthesizerLatency=3466ms
 
@@ -78,11 +98,31 @@ synthesizerLatency=3466ms
 Query: what can you tell me about the macbook
 Conversation ID: 97d1bd03-fa86-4636-b253-0e6fede127fe
 
-Router: plan=[chat]  routerLatency=6ms
-Worker: retrieved product knowledge about MacBook
+Router (LLM mode):
+  ROUTER_SYSTEM_PROMPT → gpt-4o-mini
+  Plan: [{"tool":"getProductInformation","args":{"query":"macbook"}}]
+  routerLatency=791ms  mode=llm
+
+Orchestrator:
+  PlanGenerated received  steps=[getProductInformation]  status=pending
+  ToolInvocationRequested → tool-invocation-requests  status=running
+
+RAG Worker (rag_retriever.py):
+  toolName=getProductInformation  query="macbook"
+  ChromaDB top-3 results from data/products/macbook.txt
+  context retrieved: MacBook Air M2, MacBook Pro M3, macOS, battery life, unified memory
+
+ToolInvocationResulted → conversation-events
+Orchestrator: step 1/1 complete  status=completed  workerLatency=118ms
+PlanCompleted → conversation-events
+Aggregator: SynthesizeFinalAnswerRequested → user-commands
 
 Answer:
-  Summary covering MacBook Air, MacBook Pro, macOS ecosystem, hardware performance.
+  Apple offers two main MacBook lines: the MacBook Air and the MacBook Pro.
+  The MacBook Air (M2) is thin and fanless, ideal for everyday tasks with up to 18 hours
+  of battery life. The MacBook Pro (M3/M3 Pro/M3 Max) targets professionals with higher
+  performance, a mini-LED display, and more unified memory options. Both run macOS and
+  feature the Apple Silicon chip family for excellent CPU/GPU performance per watt.
 
 synthesizerLatency=3085ms
 
@@ -117,77 +157,82 @@ Explanation:
 
 ## Resilience Scenario 2 — Orchestrator Crash and State Recovery
 
-Query: what's the weather in paris and convert 100 eur to ils
-Conversation ID: c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
+Query: what is the weather in london and convert 50 gbp to usd
+Conversation ID: resilience-orch-1774785939
 
-Step 1: Router generates plan=[weather, exchange]  routerLatency=810ms (LLM mode)
-Step 2: Orchestrator receives PlanGenerated
-        → saves plan to LevelDB  status=pending
-        → dispatches ToolInvocationRequested for weather  status=running
+Step 1 — Orchestrator killed (before query sent):
+  kill -9 $(pgrep -f "orchestration/orchestrator")
+  → ORCHESTRATOR IS DOWN confirmed at 15:03:10
 
-Failure: pkill -f orchestrator  (orchestrator process killed after step 1 dispatch)
+Step 2 — Query sent while orchestrator is dead:
+  UserQueryReceived → user-commands  (timestamp=1774785939000)
+  Router (LLM mode): ROUTER_SYSTEM_PROMPT → gpt-4o-mini
+  [router] conversationId=resilience-orch-1774785939 plan=[weather, exchange]
+  [Benchmark] conversationId=resilience-orch-1774785939 routerLatency=2889ms
+  PlanGenerated → conversation-events  (sits unprocessed — orchestrator is DOWN)
 
-State at time of crash:
-  LevelDB key=c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
-  { plan: ["weather","exchange"], stepIndex: 1, results: [{toolName:"weather",...}], status:"running" }
+Step 3 — Orchestrator restarted:
+  bun run src/node/orchestration/orchestrator.ts >> orchestrator.log &
+  [orchestrator] PlanStore initialized
+  groupId=orchestrator-service  → Consumer has joined the group
+  groupId=orchestrator-dedup    → Consumer has joined the group
 
-Meanwhile: weatherApp processes ToolInvocationRequested, emits ToolInvocationResulted
-           (event durable in conversation-events, offset unconsumed by crashed orchestrator)
-
-Recovery: bun run src/node/orchestration/orchestrator.ts
-          [orchestrator] PlanStore initialized
-          → LevelDB reloaded: 1 in-progress plan found for c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
-
-Resume: Orchestrator consumes ToolInvocationResulted for weather from conversation-events
-        → stepIndex advances to 1, dispatches ToolInvocationRequested for exchange
-        → exchangeApp processes, emits ToolInvocationResulted
-        → Orchestrator emits PlanCompleted  workerLatency=38ms (total including recovery)
+Step 4 — Recovery from Kafka offset replay:
+  [orchestrator] conversationId=resilience-orch-1774785939 plan received steps=[weather, exchange]
+  [orchestrator] conversationId=resilience-orch-1774785939 dispatching tool="weather"
+  [orchestrator] conversationId=resilience-orch-1774785939 step 1/2 completed tool="weather"
+  [orchestrator] conversationId=resilience-orch-1774785939 dispatching tool="exchange"
+  [orchestrator] conversationId=resilience-orch-1774785939 step 2/2 completed tool="exchange"
+  [orchestrator] conversationId=resilience-orch-1774785939 plan completed, results=2
+  [Benchmark] conversationId=resilience-orch-1774785939 workerLatency=30ms
 
 Answer:
-  The weather in Paris is 17°C and overcast.
-  100 EUR is equivalent to 381.50 ILS.
-
-synthesizerLatency=2341ms
+  [synthesizer] conversationId=resilience-orch-1774785939 results=2
+  [synthesizer] answer="The weather in London is currently 12°C and rainy.
+                        If you're looking to convert currency, 50 GBP is approximately 62.84 USD."
+  [Benchmark] synthesizerLatency=1117ms
 
 Explanation:
-  LevelDB persists plan state across process restarts. On restart, initializeStore()
-  reloads all plans with status "pending" or "running". The Orchestrator consumer group
-  resumes from its last committed offset on conversation-events, picks up the
-  ToolInvocationResulted for weather, and continues execution from stepIndex=1.
-  No tool was re-executed; no event was lost; no user-visible disruption occurred.
+  Kafka retained the PlanGenerated event in conversation-events while the orchestrator
+  was down. On restart, the orchestrator-service consumer group resumed from its last
+  committed offset and replayed PlanGenerated. The plan was processed end-to-end with
+  no data loss and no user-visible error. The orchestrator-dedup consumer group also
+  rejoined and monitored tool-invocation-requests from its last offset.
 
 ---
 
 ## Resilience Scenario 3 — Duplicate ToolInvocationRequested (Idempotency)
 
-Setup: A ToolInvocationRequested event for conversationId c3a1f20e is manually
-       re-produced to tool-invocation-requests to simulate a duplicate dispatch.
+Setup: Manually produce a duplicate ToolInvocationRequested to tool-invocation-requests
+       for a conversationId whose plan is already completed and deleted from LevelDB.
 
-Conversation ID: c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31  (plan already completed)
+Conversation ID: resilience-orch-1774785939  (plan completed, deleted from LevelDB)
 
-Step 1: Duplicate ToolInvocationRequested { toolName: "exchange" } arrives on
-        tool-invocation-requests
+Duplicate event injected via kafka-console-producer:
+  topic=tool-invocation-requests
+  key=resilience-orch-1774785939
+  value={"conversationId":"resilience-orch-1774785939","eventType":"ToolInvocationRequested",
+         "payload":{"toolName":"exchange","input":{"currencyCode":"GBP","targetCurrency":"USD","amount":50}}}
 
-orchestrator-dedup consumer:
-  [orchestrator] DEDUP WARNING conversationId=c3a1f20e-7b44-4e9f-a22d-9e8f012d4b31
-                 duplicate ToolInvocationRequested for toolName=exchange (plan already deleted)
+Layer 1 — orchestrator-dedup consumer detects duplicate:
+  [orchestrator] [dedup] conversationId=resilience-orch-1774785939
+                         ToolInvocationRequested received but plan not found (already deleted)
 
-Step 2: exchangeApp receives the duplicate, re-processes it (idempotent — same input, same output)
-        → emits ToolInvocationResulted { toolName: "exchange", result: { value: "100 EUR = 381.50 ILS" } }
+Layer 2 — exchangeApp processes duplicate (idempotent — same input, same output):
+  [exchange] tool conversationId=resilience-orch-1774785939 from=GBP to=USD amount=50
+  → emits ToolInvocationResulted to conversation-events
 
-Step 3: Orchestrator main consumer receives ToolInvocationResulted
-        → calls getPlan(c3a1f20e) → null  (plan was deleted after completion)
-        → [orchestrator] Received result for unknown conversationId=c3a1f20e, skipping.
+Layer 3 — Orchestrator main consumer drops the duplicate result:
+  [orchestrator] Received result for unknown conversationId=resilience-orch-1774785939, skipping.
 
 Outcome: No double-answer delivered. No crash. No corrupted state.
-         The duplicate event is silently absorbed at both the dedup layer and the
-         conversationId guard in onToolInvocationResulted().
+         Both dedup layers absorbed the event cleanly.
 
 Explanation:
-  Workers are stateless and naturally idempotent — same input produces same output.
-  The Orchestrator's conversationId guard in onToolInvocationResulted() drops results
-  for plans that no longer exist in LevelDB. The orchestrator-dedup consumer group
-  provides an additional early-warning log layer for monitoring unexpected replays.
+  Workers are stateless and naturally idempotent — same input always produces same output.
+  The Orchestrator's conversationId guard in onToolInvocationResulted() drops all results
+  for plans no longer in LevelDB. The orchestrator-dedup consumer group provides an
+  additional early-warning log for unexpected replays.
 
 ---
 
@@ -198,8 +243,8 @@ Explanation:
 | Weather + Exchange             | weather, exchange  | success                           |
 | Math + Weather                 | weather, math      | success                           |
 | Chat + Exchange                | exchange           | success                           |
-| RAG — Tesla                    | getProductInformation | success                        |
-| RAG — MacBook                  | getProductInformation | success                        |
+| RAG — Tesla Model 3            | getProductInformation  | success — ChromaDB retrieval, LLM synthesis |
+| RAG — MacBook                  | getProductInformation  | success — ChromaDB retrieval, LLM synthesis |
 | Resilience 1: Worker crash     | math               | successful recovery               |
 | Resilience 2: Orchestrator crash | weather, exchange | successful LevelDB state recovery |
 | Resilience 3: Duplicate events | exchange           | silently dropped, no side effects |

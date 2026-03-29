@@ -422,8 +422,8 @@ Three orchestration scenarios and two RAG scenarios were executed and logged in 
 
 | Scenario | Query | Outcome |
 |---|---|---|
-| Tesla Model 3 | `tell me about the tesla model 3` | Product context retrieved from ChromaDB; summary covering performance, range, autopilot · synthesizerLatency=3466ms |
-| MacBook | `what can you tell me about the macbook` | Product context retrieved; summary covering MacBook Air, MacBook Pro, macOS · synthesizerLatency=3085ms |
+| Tesla Model 3 | `tell me about the tesla model 3` | Plan: `[getProductInformation]` · ChromaDB top-3 from `tesla.txt` · range, perf, Autopilot · synthesizerLatency=3466ms |
+| MacBook | `what can you tell me about the macbook` | Plan: `[getProductInformation]` · ChromaDB top-3 from `macbook.txt` · Air vs Pro, M-series · synthesizerLatency=3085ms |
 
 ### Resilience Scenarios
 
