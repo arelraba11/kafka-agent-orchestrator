@@ -30,7 +30,6 @@ wait_for_kafka() {
 # ─── Ensure topics exist ─────────────────────────────────────────────────────
 ensure_topics() {
   echo "Creating/verifying topics..."
-  bash infra/topics.sh       2>/dev/null || true
   bash infra/topics-final.sh 2>/dev/null || true
   echo "Topics ready."
 }
@@ -39,41 +38,33 @@ ensure_topics() {
 wait_for_kafka
 ensure_topics
 
-# ─── Launch services with staggered starts ────────────────────────────────────
+# ─── Launch services ─────────────────────────────────────────────────────────
 
 bun run src/node/core/routerService.ts                  > "$LOG_DIR/router.log"       2>&1 &
 echo "Started routerService (PID $!)"
-sleep 1
 
 bun run src/node/orchestration/orchestrator.ts          > "$LOG_DIR/orchestrator.log" 2>&1 &
 echo "Started orchestrator (PID $!)"
-sleep 1
 
 bun run src/node/orchestration/aggregator.ts            > "$LOG_DIR/aggregator.log"   2>&1 &
 echo "Started aggregator (PID $!)"
-sleep 1
 
 bun run src/node/apps/mathApp.ts                        > "$LOG_DIR/math.log"         2>&1 &
 echo "Started mathApp (PID $!)"
-sleep 1
 
 bun run src/node/apps/weatherApp.ts                     > "$LOG_DIR/weather.log"      2>&1 &
 echo "Started weatherApp (PID $!)"
-sleep 1
 
 bun run src/node/apps/exchangeApp.ts                    > "$LOG_DIR/exchange.log"     2>&1 &
 echo "Started exchangeApp (PID $!)"
-sleep 1
 
 bun run src/node/apps/generalChatApp.ts                 > "$LOG_DIR/chat.log"         2>&1 &
 echo "Started generalChatApp (PID $!)"
-sleep 1
 
 bun run src/node/orchestration/answerSynthesizer.ts     > "$LOG_DIR/answer.log"       2>&1 &
 echo "Started answerSynthesizer (PID $!)"
-sleep 1
 
-src/python/venv/bin/python -u src/python/rag/rag_retriever.py > "$LOG_DIR/rag.log"      2>&1 &
+src/python/venv/bin/python -u src/python/rag/rag_retriever.py > "$LOG_DIR/rag.log"   2>&1 &
 echo "Started rag_retriever (PID $!)"
 
 echo ""
@@ -85,5 +76,3 @@ echo "  bun run src/node/core/userInterface.ts"
 echo ""
 echo "To stop all services:"
 echo "  bash scripts/stop-all.sh"
-echo "or"
-echo "  pkill -f bun"

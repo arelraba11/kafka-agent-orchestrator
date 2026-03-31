@@ -1,10 +1,6 @@
 {
   "scripts": {
-    "start:final": "./scripts/start-final.sh",
-    "start:ex1": "./scripts/start-ex1.sh",
-    "start:ex2": "./scripts/start-ex2.sh",
-    "start:ex3": "./scripts/start-ex3.sh",
-    "start:ex4": "./scripts/start-ex4.sh",
+    "start": "./scripts/start-final.sh",
     "stop": "./scripts/stop-all.sh"
   },
   "dependencies": {
