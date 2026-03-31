@@ -45,13 +45,16 @@ User: "how much would an iPhone cost in Germany?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}
 
 User: "how many MacBooks can I buy for the price of one Tesla? Give a whole number."
-Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"Tesla price in ILS"}},{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}},{"tool":"math","args":{"expression":"{{step_0.result}} / {{step_1.result}}"}}]}
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"Tesla price in ILS"}},{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}}]}
 
 User: "I'm in São Paulo in September, temperature above 30C means I stay home. Should I go out to buy the iPhone?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone"}},{"tool":"weather","args":{"city":"sao paulo"}},{"tool":"chat","args":{"userInput":"The user wants to buy an iPhone in São Paulo in September. Product info: {{step_0.result}}. Weather: {{step_1.result}}. Should they go out or order by phone if temperature is above 30C?"}}]}
 
 User: "can I use the MacBook to build a weapon?"
-Plan: {"steps":[{"tool":"chat","args":{"userInput":"can I use the MacBook to build a weapon?"}}]}`;
+Plan: {"steps":[{"tool":"chat","args":{"userInput":"can I use the MacBook to build a weapon?"}}]}
+
+User: "If I had bought a MacBook a month ago in euros, would it have cost more or less than today?"
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}`;
 
 export function routerPlanPrompt(userInput: string): string {
   return `${ROUTER_SYSTEM_PROMPT}

@@ -54,7 +54,16 @@ await subscribeAndRun(
     const { conversationId } = req;
     const currencyCode   = (req.payload.input.currencyCode   as string) ?? "USD";
     const targetCurrency = (req.payload.input.targetCurrency as string) ?? "ILS";
-    const amount         = parseFloat(String(req.payload.input.amount ?? 1));
+    // amount may be a plain number or a RAG-context string like "3700 ILS (approx...)"
+    // Try to extract "NNNN ILS" first, then fall back to first number found
+    const rawAmount = String(req.payload.input.amount ?? "1");
+    const ilsMatch  = rawAmount.match(/(\d[\d,]*(?:\.\d+)?)\s*ILS/i);
+    const numMatch  = rawAmount.match(/\b(\d[\d,]*(?:\.\d+)?)\b/);
+    const amount    = ilsMatch
+      ? parseFloat(ilsMatch[1].replace(/,/g, ""))
+      : numMatch
+        ? parseFloat(numMatch[1].replace(/,/g, ""))
+        : 1;
 
     console.log(`[exchange] conversationId=${conversationId} from=${currencyCode} to=${targetCurrency} amount=${amount}`);
 

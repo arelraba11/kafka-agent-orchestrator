@@ -36,11 +36,14 @@ function resolvePlaceholders(
     if (typeof val === "string") {
       resolved[key] = val.replace(/\{\{step_(\d+)\.result\}\}/g, (_match, nStr) => {
         const n = parseInt(nStr, 10);
-        const entry = results[n] as { result?: { value?: unknown } } | undefined;
+        const entry = results[n] as { result?: Record<string, unknown> } | undefined;
         if (!entry) return "";
-        const result = entry.result as { value?: unknown } | undefined;
-        if (result && result.value !== undefined) return String(result.value);
-        return JSON.stringify(entry.result ?? "");
+        const result = entry.result;
+        if (!result) return "";
+        // Standard tools return { value }; RAG returns { context }
+        if (result.value !== undefined) return String(result.value);
+        if (result.context !== undefined) return String(result.context);
+        return JSON.stringify(result);
       });
     } else {
       resolved[key] = val;
