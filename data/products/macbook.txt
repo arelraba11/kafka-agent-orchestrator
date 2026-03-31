@@ -5,3 +5,4 @@ The MacBook Air is Apple's thinnest and lightest laptop, weighing approximately 
 The MacBook Pro is designed for professional users who require sustained high performance. The 14-inch and 16-inch MacBook Pro models use the M3 Pro or M3 Max chips, which deliver exceptional CPU and GPU performance for demanding workloads such as video editing, 3D rendering, and software compilation. The MacBook Pro includes a Liquid Retina XDR display with ProMotion technology and up to 120Hz refresh rate.
 
 MacBook batteries are rated for up to 22 hours of video playback on the MacBook Pro 16-inch model. All MacBook models run macOS and support integration with other Apple devices through features like Handoff, Sidecar, and Universal Clipboard. MacBooks include a MagSafe charging connector, Thunderbolt ports, an HDMI port on the Pro models, and a built-in high-fidelity speaker system.
+the price is 2000 USD

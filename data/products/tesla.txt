@@ -5,3 +5,5 @@ The Tesla Model 3 is one of the best-selling electric vehicles in the world. It 
 Tesla vehicles use Autopilot as a standard driver assistance system, which includes features like adaptive cruise control, lane centering, and automatic emergency braking. The Full Self-Driving package adds additional capabilities such as Navigate on Autopilot, automatic lane changes, and traffic and stop sign control. Tesla uses a large fleet of vehicles to collect data that continually trains its neural network-based driving system.
 
 Tesla Supercharger is a global network of fast-charging stations designed exclusively for Tesla vehicles, with over 50,000 connectors worldwide as of 2024. The Model Y is the best-selling vehicle globally and comes in Standard Range, Long Range, and Performance trims. Tesla batteries use lithium-ion chemistry and are designed to retain at least 70 percent of capacity after 150,000 miles of driving.
+
+the price is 100,000 USD
