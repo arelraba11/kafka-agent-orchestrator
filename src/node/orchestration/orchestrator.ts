@@ -6,7 +6,7 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { PlanGenerated } from "../../../shared/schemas/PlanGenerated";
+import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
 import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
@@ -18,7 +18,6 @@ import {
   updatePlan,
   deletePlan,
 } from "../../../shared/state/planStore";
-import type { PlanStep } from "../../../shared/schemas/PlanGenerated";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,9 +39,7 @@ function resolvePlaceholders(
         const entry = results[n] as { result?: { value?: unknown } } | undefined;
         if (!entry) return "";
         const result = entry.result as { value?: unknown } | undefined;
-        if (result && result.value !== undefined) {
-          return String(result.value);
-        }
+        if (result && result.value !== undefined) return String(result.value);
         return JSON.stringify(entry.result ?? "");
       });
     } else {
@@ -67,6 +64,7 @@ async function dispatchStep(
     eventType: "ToolInvocationRequested",
     payload: { toolName: step.tool, input: resolvedArgs },
   };
+
   await sendMessage(producer, TOPICS.TOOL_INVOCATION_REQUESTS, conversationId, event);
   console.log(`[orchestrator] conversationId=${conversationId} dispatching tool="${step.tool}"`);
 }
@@ -97,7 +95,6 @@ async function onPlanGenerated(
   const { conversationId, payload } = event;
   const { steps } = payload;
 
-  // Gap 8: save with "pending" status before any dispatch
   await savePlan(conversationId, {
     plan: steps,
     stepIndex: 0,
@@ -105,12 +102,11 @@ async function onPlanGenerated(
     status: "pending",
     planReceivedAt: Date.now(),
   });
+
   console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.map(s => s.tool).join(", ")}]`);
 
-  // Gap 2: wrap first dispatch in try-catch; emit PlanFailed on Kafka send failure
   try {
     await dispatchStep(producer, conversationId, steps[0], []);
-    // Gap 8: transition to "running" after first successful dispatch
     await updatePlan(conversationId, { status: "running" });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -132,7 +128,6 @@ async function onToolInvocationResulted(
     return;
   }
 
-  // Gap 2: detect tool-level error in result payload
   const resultPayload = payload.result as { error?: string } | undefined;
   if (resultPayload && typeof resultPayload.error === "string") {
     const reason = resultPayload.error;
@@ -151,7 +146,6 @@ async function onToolInvocationResulted(
   console.log(`[orchestrator] conversationId=${conversationId} step ${updatedStepIndex}/${state.plan.length} completed tool="${payload.toolName}"`);
 
   if (updatedStepIndex < state.plan.length) {
-    // Gap 2: wrap subsequent dispatches in try-catch
     try {
       await dispatchStep(producer, conversationId, state.plan[updatedStepIndex], updatedResults);
     } catch (err) {
@@ -164,7 +158,6 @@ async function onToolInvocationResulted(
     return;
   }
 
-  // All steps done — Gap 8: mark "completed", emit PlanCompleted, then delete
   await updatePlan(conversationId, { status: "completed" });
 
   const planCompleted: PlanCompleted = {
@@ -191,10 +184,7 @@ console.log("[orchestrator] PlanStore initialized");
 const producer = await createProducer();
 const consumer = await createConsumer("orchestrator-service");
 
-// Gap 5: second consumer for dedup monitoring on tool-invocation-requests
-const consumerToolRequests = await createConsumer("orchestrator-dedup");
-
-registerShutdown([producer, consumer, consumerToolRequests]);
+registerShutdown([producer, consumer]);
 
 await subscribeAndRun(
   consumer,
@@ -210,32 +200,7 @@ await subscribeAndRun(
         await onToolInvocationResulted(producer, event as ToolInvocationResulted);
         break;
       default:
-        // Ignore other event types (PlanCompleted, FinalAnswerSynthesized, PlanFailed, etc.)
         break;
-    }
-  }
-);
-
-// Gap 5: subscribe dedup consumer to tool-invocation-requests
-await subscribeAndRun(
-  consumerToolRequests,
-  [TOPICS.TOOL_INVOCATION_REQUESTS],
-  async (_topic, _key, value) => {
-    const event = value as { eventType?: string; conversationId?: string };
-    if (event.eventType !== "ToolInvocationRequested") return;
-
-    const cid = event.conversationId;
-    if (!cid) return;
-
-    const state = await getPlan(cid);
-    if (!state) {
-      // Plan already deleted (completed or failed) — late/duplicate message
-      console.warn(`[orchestrator] [dedup] conversationId=${cid} ToolInvocationRequested received but plan not found (already deleted)`);
-      return;
-    }
-
-    if (state.status === "completed" || state.status === "failed") {
-      console.warn(`[orchestrator] [dedup] conversationId=${cid} ToolInvocationRequested received for already-${state.status} plan — ignoring`);
     }
   }
 );
