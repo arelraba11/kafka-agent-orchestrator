@@ -1,9 +1,42 @@
-Tesla is an American electric vehicle and clean energy company founded in 2003 and headquartered in Austin, Texas. Tesla designs and manufactures battery electric vehicles, energy storage systems, and solar products. The company's vehicle lineup includes the Model S, Model 3, Model X, Model Y, Cybertruck, and the Semi truck.
+Product: Tesla Model 3 (Long Range)
+Category: Electric Vehicle
+Brand: Tesla
+Price: 370000 ILS (approximately 100000 USD)
 
-The Tesla Model 3 is one of the best-selling electric vehicles in the world. It offers a Long Range variant with an EPA-estimated range of over 350 miles on a single charge. The Model 3 features over-the-air software updates that can add new features, improve performance, and enhance safety without requiring a visit to a service center.
+The Tesla Model 3 Long Range is one of the world's best-selling electric vehicles, combining impressive range, advanced technology, and over-the-air software updates. It is a mid-size sedan manufactured by Tesla, headquartered in Austin, Texas.
 
-Tesla vehicles use Autopilot as a standard driver assistance system, which includes features like adaptive cruise control, lane centering, and automatic emergency braking. The Full Self-Driving package adds additional capabilities such as Navigate on Autopilot, automatic lane changes, and traffic and stop sign control. Tesla uses a large fleet of vehicles to collect data that continually trains its neural network-based driving system.
+Range and Performance:
+- EPA-estimated range: 358 miles (576 km) on a single charge
+- 0 to 60 mph in 4.2 seconds (Long Range All-Wheel Drive)
+- Top speed: 145 mph
+- Dual motor all-wheel drive
 
-Tesla Supercharger is a global network of fast-charging stations designed exclusively for Tesla vehicles, with over 50,000 connectors worldwide as of 2024. The Model Y is the best-selling vehicle globally and comes in Standard Range, Long Range, and Performance trims. Tesla batteries use lithium-ion chemistry and are designed to retain at least 70 percent of capacity after 150,000 miles of driving.
+Battery and Charging:
+- Lithium-ion battery pack, retains 70% capacity after 150,000 miles
+- Supercharger network: over 50,000 connectors worldwide
+- Up to 250 kW peak charging at V3 Supercharger
+- Charges from 10% to 80% in approximately 25 minutes
 
-the price is 100,000 USD
+Autopilot and Safety:
+- Standard Autopilot: adaptive cruise control, lane centering, automatic emergency braking
+- Full Self-Driving (FSD) package available as optional upgrade
+- 8 cameras, ultrasonic sensors, and forward-facing radar
+- NHTSA 5-star safety rating in all categories
+
+Interior and Technology:
+- 15.4-inch central touchscreen controlling all vehicle functions
+- Over-the-air software updates for new features and improvements
+- Premium audio system with 14 speakers
+- Glass roof with UV and infrared protection
+- Wireless phone charging
+
+Ecosystem:
+- Tesla mobile app for remote monitoring, climate control, and charging
+- Integration with home solar and Powerwall energy storage systems
+- Available colors: Pearl White, Midnight Silver, Deep Blue, Solid Black, Red
+
+Comparison:
+- The Tesla is significantly more expensive than the iPhone (370000 ILS vs 3700 ILS) and the MacBook (370000 ILS vs 7400 ILS).
+- The iPhone costs approximately 1% of the Tesla price.
+- The MacBook costs approximately 2% of the Tesla price.
+- You could buy approximately 100 iPhones or 50 MacBooks for the price of one Tesla Model 3.

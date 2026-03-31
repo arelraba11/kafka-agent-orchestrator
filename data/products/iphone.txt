@@ -1,8 +1,32 @@
-The iPhone is a line of smartphones designed and marketed by Apple Inc. The iPhone runs iOS, Apple's proprietary mobile operating system, and integrates hardware and software developed entirely by Apple. iPhones are available in multiple storage capacities, typically ranging from 128GB to 1TB depending on the model.
+Product: iPhone 15 Pro
+Category: Smartphone
+Brand: Apple
+Price: 3700 ILS (approximately 1000 USD)
 
-The iPhone 15 Pro and Pro Max feature a titanium frame, which is lighter and stronger than previous stainless steel designs. The display uses ProMotion OLED technology with a 120Hz adaptive refresh rate. The A17 Pro chip is built on a 3-nanometer process and delivers significant improvements in both CPU and GPU performance compared to previous generations.
+The iPhone 15 Pro is Apple's flagship smartphone, featuring a lightweight titanium frame and a 6.1-inch Super Retina XDR OLED display with ProMotion 120Hz adaptive refresh rate. It is powered by the A17 Pro chip, built on a 3-nanometer process, delivering industry-leading CPU and GPU performance.
 
-iPhone cameras have been a major selling point across all models. The Pro lineup includes a 48MP main camera, a 12MP ultrawide camera, and a 12MP telephoto camera with up to 5x optical zoom on the iPhone 15 Pro Max. Features such as Smart HDR, Night Mode, and Cinematic Mode are available on recent models for both photos and videos.
+Camera System:
+- 48MP main camera with second-generation sensor-shift OIS
+- 12MP ultrawide camera with autofocus
+- 12MP telephoto camera with 3x optical zoom
+- Supports 4K ProRes video recording
 
-iPhones support Apple ecosystem integrations including iCloud for storage and backup, AirDrop for file sharing, and seamless connectivity with Macs, iPads, and Apple Watches. The devices include Face ID for biometric authentication and support Apple Pay for contactless payments. The iPhone 15 lineup uses USB-C, replacing the Lightning connector used in prior generations.
- the price is 1000 USD
+Key Features:
+- Face ID biometric authentication
+- USB-C connector (replaces Lightning)
+- Apple Pay contactless payments
+- Satellite connectivity for emergency SOS
+- iOS 17 with ongoing software updates
+
+Battery and Connectivity:
+- Up to 23 hours video playback
+- MagSafe wireless charging
+- 5G connectivity
+- Wi-Fi 6E and Bluetooth 5.3
+
+Ecosystem Integration:
+- Seamless sync with Mac, iPad, Apple Watch via iCloud
+- AirDrop, Handoff, and Universal Clipboard support
+- Available storage: 128GB, 256GB, 512GB, 1TB
+
+The iPhone is ideal for users who prioritize camera quality, ecosystem integration, and long software support. It is a premium product positioned at the top of the smartphone market.

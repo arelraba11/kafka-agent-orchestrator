@@ -1,8 +1,39 @@
-The MacBook is a line of laptop computers designed and built by Apple Inc. The current MacBook lineup includes the MacBook Air and MacBook Pro, available in 13-inch, 14-inch, and 16-inch display sizes. All current MacBook models are powered by Apple Silicon chips, which replaced Intel processors starting in 2020.
+Product: MacBook Pro 14-inch (M3 Pro)
+Category: Laptop Computer
+Brand: Apple
+Price: 7400 ILS (approximately 2000 USD)
 
-The MacBook Air is Apple's thinnest and lightest laptop, weighing approximately 2.7 pounds for the 13-inch model. It uses the M2 or M3 chip depending on the configuration and features a fanless design, meaning it operates silently under most workloads. The MacBook Air is designed for everyday tasks including web browsing, document editing, media consumption, and lightweight creative work.
+The MacBook Pro 14-inch with M3 Pro is Apple's professional-grade laptop, designed for users who need sustained high performance for demanding workloads. It features a Liquid Retina XDR display with ProMotion technology, reaching up to 120Hz adaptive refresh rate and 1000 nits sustained brightness.
 
-The MacBook Pro is designed for professional users who require sustained high performance. The 14-inch and 16-inch MacBook Pro models use the M3 Pro or M3 Max chips, which deliver exceptional CPU and GPU performance for demanding workloads such as video editing, 3D rendering, and software compilation. The MacBook Pro includes a Liquid Retina XDR display with ProMotion technology and up to 120Hz refresh rate.
+Processor and Performance:
+- Apple M3 Pro chip (11-core CPU, 14-core GPU)
+- Up to 36GB unified memory
+- Up to 512GB SSD storage
+- Hardware-accelerated ray tracing and mesh shading
 
-MacBook batteries are rated for up to 22 hours of video playback on the MacBook Pro 16-inch model. All MacBook models run macOS and support integration with other Apple devices through features like Handoff, Sidecar, and Universal Clipboard. MacBooks include a MagSafe charging connector, Thunderbolt ports, an HDMI port on the Pro models, and a built-in high-fidelity speaker system.
-the price is 2000 USD
+Display:
+- 14.2-inch Liquid Retina XDR
+- 3024 x 1964 resolution (254 ppi)
+- ProMotion 120Hz adaptive refresh
+- 1000 nits sustained, 1600 nits peak HDR brightness
+
+Battery and Charging:
+- Up to 18 hours battery life
+- MagSafe 3 magnetic charging
+- Charges via Thunderbolt 4 as well
+
+Ports and Connectivity:
+- 3x Thunderbolt 4 (USB-C) ports
+- HDMI 2.1
+- SD card reader
+- 3.5mm headphone jack
+- Wi-Fi 6E and Bluetooth 5.3
+
+Audio and Camera:
+- Six-speaker sound system with Spatial Audio
+- 1080p FaceTime HD camera
+- Studio-quality three-mic array
+
+The MacBook Pro is best suited for software developers, video editors, 3D artists, and data scientists. Compared to the iPhone, it offers a full desktop-class experience with macOS. Compared to the Tesla, it is a personal productivity tool rather than a vehicle.
+
+The MacBook Air (M2) is a lighter alternative at approximately 5400 ILS (1460 USD), suited for everyday tasks without the need for sustained peak performance.
