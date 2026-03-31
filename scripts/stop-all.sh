@@ -3,4 +3,7 @@
 # Usage: bash scripts/stop-all.sh
 
 echo "=== Stopping all Bun services ==="
-pkill -f bun && echo "Done." || echo "No Bun processes found."
+pkill -f bun && echo "Bun processes stopped." || echo "No Bun processes found."
+
+echo "=== Stopping RAG retriever ==="
+pkill -f "rag_retriever.py" && echo "RAG retriever stopped." || echo "No RAG retriever process found."

@@ -53,7 +53,8 @@ await subscribeAndRun(
       const item = r as { toolName: string; result: Record<string, unknown> };
       return {
         tool: item.toolName,
-        result: String(item.result.value ?? JSON.stringify(item.result)),
+        // RAG results carry retrieved text in `context`; other tools use `value`
+        result: String(item.result.value ?? item.result.context ?? JSON.stringify(item.result)),
       };
     });
 

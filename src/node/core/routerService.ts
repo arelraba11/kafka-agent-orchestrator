@@ -180,6 +180,7 @@ async function route(
 
 const PLAN_WEATHER_REGEX  = /\b(weather|temperature|forecast|hot|cold|rain|sunny)\b/i;
 const PLAN_EXCHANGE_REGEX = /\b(exchange|convert|USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
+const PLAN_PRODUCT_REGEX  = /\b(iphone|macbook|mac book|tesla|model\s*3|model\s*s|model\s*x|model\s*y|cybertruck|product|laptop|phone|smartphone|electric vehicle|ev)\b/i;
 const EXTRACT_CURRENCIES  = /\b(USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/gi;
 const EXTRACT_AMOUNT      = /\b(\d+(?:\.\d+)?)\s+(?:USD|EUR|ILS|GBP|JPY|CHF|CAD|AUD)\b/i;
 
@@ -207,6 +208,10 @@ function generatePlanRegex(userInput: string): PlanStep[] {
 
   if (isMathInput(userInput)) {
     steps.push({ tool: "math", args: { expression: extractExpression(userInput) } });
+  }
+
+  if (PLAN_PRODUCT_REGEX.test(userInput)) {
+    steps.push({ tool: "getProductInformation", args: { query: userInput } });
   }
 
   if (steps.length === 0) {
