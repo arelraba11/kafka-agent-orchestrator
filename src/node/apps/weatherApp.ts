@@ -6,7 +6,6 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { IntentWeatherEvent, AppResultEvent } from "../../../shared/types/events";
 import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 
@@ -28,6 +27,7 @@ const MOCK_WEATHER: Record<string, WeatherData> = {
   "berlin":      { temp: 10, condition: "windy" },
   "tokyo":       { temp: 20, condition: "humid" },
   "dubai":       { temp: 38, condition: "hot and sunny" },
+  "sao paulo":   { temp: 27, condition: "warm and humid" },
 };
 
 const DEFAULT_WEATHER: WeatherData = { temp: 20, condition: "clear" };
@@ -43,60 +43,12 @@ function formatResult(city: string, data: WeatherData): string {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 const producer = await createProducer();
-const consumer = await createConsumer("weather-service");
-const consumerTool = await createConsumer("weather-tool-worker");
+const consumer = await createConsumer("weather-tool-worker");
 
-registerShutdown([producer, consumer, consumerTool]);
-
-// ── Ex1/2: intent-weather consumer (unchanged) ────────────────────────────────
+registerShutdown([producer, consumer]);
 
 await subscribeAndRun(
   consumer,
-  [TOPICS.INTENT_WEATHER],
-  async (_topic, _key, value) => {
-    const event = value as IntentWeatherEvent;
-    const { userId, city } = event;
-
-    console.log(`[weather] userId=${userId} city="${city}"`);
-
-    let payload: AppResultEvent;
-
-    try {
-      const data = getMockWeather(city);
-      const result = formatResult(city, data);
-
-      payload = {
-        userId,
-        type: "weather",
-        result,
-        success: true,
-        timestamp: new Date().toISOString(),
-      };
-
-      console.log(`[weather] result="${result}"`);
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-
-      payload = {
-        userId,
-        type: "weather",
-        result: "",
-        success: false,
-        error,
-        timestamp: new Date().toISOString(),
-      };
-
-      console.error(`[weather] error="${error}"`);
-    }
-
-    await sendMessage(producer, TOPICS.APP_RESULTS, userId, payload);
-  }
-);
-
-// ── Final Project: tool-invocation-requests consumer ─────────────────────────
-
-subscribeAndRun(
-  consumerTool,
   [TOPICS.TOOL_INVOCATION_REQUESTS],
   async (_topic, _key, value) => {
     const req = value as ToolInvocationRequested;
@@ -105,13 +57,13 @@ subscribeAndRun(
     const { conversationId } = req;
     const city = (req.payload.input.city as string) ?? "Tel Aviv";
 
-    console.log(`[weather] tool conversationId=${conversationId} city="${city}"`);
+    console.log(`[weather] conversationId=${conversationId} city="${city}"`);
 
     try {
       const data = getMockWeather(city);
       const resultStr = formatResult(city, data);
 
-      console.log(`[weather] tool result="${resultStr}"`);
+      console.log(`[weather] result="${resultStr}"`);
 
       const event: ToolInvocationResulted = {
         conversationId,
@@ -126,7 +78,7 @@ subscribeAndRun(
       await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[weather] tool error="${errorMsg}"`);
+      console.error(`[weather] error="${errorMsg}"`);
 
       const event: ToolInvocationResulted = {
         conversationId,
@@ -141,6 +93,6 @@ subscribeAndRun(
       await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
     }
   }
-).catch(err => console.error("[weather] Tool worker error:", err));
+);
 
 console.log("[weather] WeatherApp started.");

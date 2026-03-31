@@ -6,8 +6,6 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { IntentGeneralChatEvent, AppResultEvent } from "../../../shared/types/events";
-import type { ConversationHistory } from "../../../shared/types/conversation";
 import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 
@@ -17,6 +15,11 @@ interface Rule {
   pattern: RegExp;
   response: string;
 }
+
+const GUARDRAIL_RULES: Rule[] = [
+  { pattern: /\b(bomb|weapon|explosive|poison|kill|harm|attack|illegal)\b/i,
+    response: "I'm not able to help with that request. Please ask me something else." },
+];
 
 const RULES: Rule[] = [
   { pattern: /\b(ai|artificial intelligence|machine learning|llm)\b/i,
@@ -32,7 +35,7 @@ const RULES: Rule[] = [
     response: "Kafka is a powerful distributed event streaming platform. It's great for building real-time data pipelines and microservices." },
 
   { pattern: /\b(what is your name|who are you|what are you)\b/i,
-    response: "I'm a distributed bot built on Kafka microservices. Each reply you see went through an intent router, a worker service, and an aggregator!" },
+    response: "I'm a distributed AI agent built on Kafka microservices. Each reply you see went through an intent router, an orchestrator, and a synthesizer!" },
 
   { pattern: /\b(thank|thanks|thank you)\b/i,
     response: "You're welcome! Let me know if there's anything else I can help with." },
@@ -45,6 +48,12 @@ const RULES: Rule[] = [
 
   { pattern: /\b(meaning of life|42)\b/i,
     response: "42, obviously. Though the real answer might be in the journey of asking the question." },
+
+  { pattern: /\b(happiness|joy|fulfillment)\b/i,
+    response: "Happiness from a purchase is often short-lived, but the right product can genuinely improve your daily life and bring lasting satisfaction." },
+
+  { pattern: /\b(recommend|suggestion|best|should i buy)\b/i,
+    response: "Based on the product information available, I'd recommend considering your specific needs and budget. Each product has unique strengths worth exploring." },
 ];
 
 const FALLBACK_RESPONSES = [
@@ -55,91 +64,28 @@ const FALLBACK_RESPONSES = [
   "I hear you. Let's explore that further.",
 ];
 
-// ─── History-aware memory lookup ──────────────────────────────────────────────
-// Searches past user messages for facts the user stated about themselves.
-
-function lookupFromHistory(userInput: string, history: ConversationHistory): string | null {
-  // "what is my name?" / "what's my name?" / "who am i?"
-  if (/\b(what'?s? (is )?my name|who am i)\b/i.test(userInput)) {
-    for (let i = history.length - 1; i >= 0; i--) {
-      const msg = history[i];
-      if (msg.role === "user") {
-        const m = msg.content.match(/\bmy name is (\w+)\b/i);
-        if (m) return `Your name is ${m[1]}.`;
-      }
-    }
-    return "I don't know your name yet. Feel free to tell me!";
+function generateResponse(userInput: string): string {
+  for (const rule of GUARDRAIL_RULES) {
+    if (rule.pattern.test(userInput)) return rule.response;
   }
-
-  // "do you remember what I said about X?" / general "remember" queries
-  if (/\bdo you remember\b/i.test(userInput)) {
-    if (history.length > 0) {
-      const lastUser = [...history].reverse().find(m => m.role === "user");
-      if (lastUser) return `The last thing you told me was: "${lastUser.content}"`;
-    }
-    return "I don't have anything stored from our conversation yet.";
-  }
-
-  return null;
-}
-
-// ─── Response generation ──────────────────────────────────────────────────────
-
-function generateResponse(userInput: string, history: ConversationHistory): string {
-  // Check history-aware queries first
-  const memoryResponse = lookupFromHistory(userInput, history);
-  if (memoryResponse) return memoryResponse;
 
   for (const rule of RULES) {
-    if (rule.pattern.test(userInput)) {
-      return rule.response;
-    }
+    if (rule.pattern.test(userInput)) return rule.response;
   }
 
-  // Use history length as a seed to rotate fallback responses
-  const index = history.length % FALLBACK_RESPONSES.length;
+  const index = userInput.length % FALLBACK_RESPONSES.length;
   return FALLBACK_RESPONSES[index];
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 const producer = await createProducer();
-const consumer = await createConsumer("chat-service");
-const consumerTool = await createConsumer("chat-tool-worker");
+const consumer = await createConsumer("chat-tool-worker");
 
-registerShutdown([producer, consumer, consumerTool]);
-
-// ── Ex1/2: intent-general-chat consumer (unchanged) ──────────────────────────
+registerShutdown([producer, consumer]);
 
 await subscribeAndRun(
   consumer,
-  [TOPICS.INTENT_CHAT],
-  async (_topic, _key, value) => {
-    const event = value as IntentGeneralChatEvent;
-    const { userId, userInput, context } = event;
-
-    console.log(`[chat] userId=${userId} input="${userInput}" historyLength=${context.length}`);
-
-    const result = generateResponse(userInput, context);
-
-    const payload: AppResultEvent = {
-      userId,
-      type: "chat",
-      result,
-      success: true,
-      timestamp: new Date().toISOString(),
-    };
-
-    console.log(`[chat] result="${result}"`);
-
-    await sendMessage(producer, TOPICS.APP_RESULTS, userId, payload);
-  }
-);
-
-// ── Final Project: tool-invocation-requests consumer ─────────────────────────
-
-subscribeAndRun(
-  consumerTool,
   [TOPICS.TOOL_INVOCATION_REQUESTS],
   async (_topic, _key, value) => {
     const req = value as ToolInvocationRequested;
@@ -147,14 +93,13 @@ subscribeAndRun(
 
     const { conversationId } = req;
     const userInput = (req.payload.input.userInput as string) ?? "";
-    const context   = (req.payload.input.context   as ConversationHistory) ?? [];
 
-    console.log(`[chat] tool conversationId=${conversationId} input="${userInput}"`);
+    console.log(`[chat] conversationId=${conversationId} input="${userInput}"`);
 
     try {
-      const resultStr = generateResponse(userInput, context);
+      const resultStr = generateResponse(userInput);
 
-      console.log(`[chat] tool result="${resultStr}"`);
+      console.log(`[chat] result="${resultStr}"`);
 
       const event: ToolInvocationResulted = {
         conversationId,
@@ -169,7 +114,7 @@ subscribeAndRun(
       await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[chat] tool error="${errorMsg}"`);
+      console.error(`[chat] error="${errorMsg}"`);
 
       const event: ToolInvocationResulted = {
         conversationId,
@@ -184,6 +129,6 @@ subscribeAndRun(
       await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
     }
   }
-).catch(err => console.error("[chat] Tool worker error:", err));
+);
 
 console.log("[chat] GeneralChatApp started.");

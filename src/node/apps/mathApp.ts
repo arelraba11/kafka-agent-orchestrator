@@ -6,7 +6,6 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { IntentMathEvent, AppResultEvent } from "../../../shared/types/events";
 import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 
@@ -21,7 +20,6 @@ function evaluate(expression: string): number {
     throw new Error(`Unsafe expression rejected: "${expression}"`);
   }
 
-  // Tokenize and evaluate using a simple recursive descent parser.
   const tokens = tokenize(expression);
   const result = parseExpr(tokens);
 
@@ -32,13 +30,9 @@ function evaluate(expression: string): number {
   return result;
 }
 
-// ─── Tokenizer ────────────────────────────────────────────────────────────────
-
 function tokenize(expr: string): string[] {
   return expr.match(/\d+\.?\d*|[+\-*/()]/g) ?? [];
 }
-
-// ─── Recursive descent parser: handles +/- then */÷ then parentheses ─────────
 
 function parseExpr(tokens: string[]): number {
   let left = parseTerm(tokens);
@@ -84,62 +78,12 @@ function parseFactor(tokens: string[]): number {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 const producer = await createProducer();
-const consumer = await createConsumer("math-service");
-const consumerTool = await createConsumer("math-tool-worker");
+const consumer = await createConsumer("math-tool-worker");
 
-registerShutdown([producer, consumer, consumerTool]);
-
-// ── Ex1/2: intent-math consumer (unchanged) ───────────────────────────────────
+registerShutdown([producer, consumer]);
 
 await subscribeAndRun(
   consumer,
-  [TOPICS.INTENT_MATH],
-  async (_topic, _key, value) => {
-    const event = value as IntentMathEvent;
-    const { userId, expression } = event;
-
-    console.log(`[math] userId=${userId} expression="${expression}"`);
-
-    let payload: AppResultEvent;
-
-    try {
-      const result = evaluate(expression);
-      const formatted = Number.isInteger(result)
-        ? result.toString()
-        : result.toFixed(4).replace(/\.?0+$/, "");
-
-      payload = {
-        userId,
-        type: "math",
-        result: formatted,
-        success: true,
-        timestamp: new Date().toISOString(),
-      };
-
-      console.log(`[math] result="${formatted}"`);
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-
-      payload = {
-        userId,
-        type: "math",
-        result: "",
-        success: false,
-        error,
-        timestamp: new Date().toISOString(),
-      };
-
-      console.error(`[math] error="${error}"`);
-    }
-
-    await sendMessage(producer, TOPICS.APP_RESULTS, userId, payload);
-  }
-);
-
-// ── Final Project: tool-invocation-requests consumer ─────────────────────────
-
-subscribeAndRun(
-  consumerTool,
   [TOPICS.TOOL_INVOCATION_REQUESTS],
   async (_topic, _key, value) => {
     const req = value as ToolInvocationRequested;
@@ -148,7 +92,7 @@ subscribeAndRun(
     const { conversationId } = req;
     const expression = (req.payload.input.expression as string) ?? "";
 
-    console.log(`[math] tool conversationId=${conversationId} expression="${expression}"`);
+    console.log(`[math] conversationId=${conversationId} expression="${expression}"`);
 
     let resultValue: string;
     let success: boolean;
@@ -160,12 +104,12 @@ subscribeAndRun(
         ? result.toString()
         : result.toFixed(4).replace(/\.?0+$/, "");
       success = true;
-      console.log(`[math] tool result="${resultValue}"`);
+      console.log(`[math] result="${resultValue}"`);
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : String(err);
       resultValue = "";
       success = false;
-      console.error(`[math] tool error="${errorMsg}"`);
+      console.error(`[math] error="${errorMsg}"`);
     }
 
     const event: ToolInvocationResulted = {
@@ -180,6 +124,6 @@ subscribeAndRun(
 
     await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
   }
-).catch(err => console.error("[math] Tool worker error:", err));
+);
 
 console.log("[math] MathApp started.");
