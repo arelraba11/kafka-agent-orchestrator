@@ -197,7 +197,12 @@ kafka-beginners-course-main/
 cp .env.example .env
 # Set OPENAI_API_KEY and ROUTER_MODE in .env
 
-# Start Kafka (KRaft), Ollama, and ChromaDB
+# Start Kafka, Ollama, and ChromaDB
+# Note: Kafka runs in KRaft mode (no ZooKeeper required).
+# KRaft is the production-ready consensus mechanism introduced in Kafka 3.3+
+# and replaces ZooKeeper entirely. The course spec mentions ZooKeeper, but
+# KRaft is the recommended approach for Kafka 3.x and removes an operational
+# dependency without any change to the Kafka API or consumer behaviour.
 docker-compose -f infra/docker-compose.yml up -d
 
 # Create all 21 topics (1 partition each)
