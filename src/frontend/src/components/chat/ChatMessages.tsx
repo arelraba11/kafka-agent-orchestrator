@@ -1,47 +1,58 @@
 import { useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
-import { TypingIndicator } from "./TypingIndicator";
+import type { Message } from "./MessageBubble";
+import MessageBubble from "./MessageBubble";
+import EmptyState from "./EmptyState";
 
-export type Message = {
-  id: string;
-  role: "user" | "bot" | "error";
-  content: string;
-  pending?: boolean;
-};
+interface ChatMessagesProps {
+  messages: Message[];
+  onSuggestion: (text: string) => void;
+  onRetry: () => void;
+  typingPhase: "thinking" | "processing" | null;
+}
 
-export function ChatMessages({ messages }: { messages: Message[] }) {
+export type { Message };
+
+export default function ChatMessages({
+  messages,
+  onSuggestion,
+  onRetry,
+  typingPhase,
+}: ChatMessagesProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  if (messages.length === 0) {
+    return <EmptyState onSuggestion={onSuggestion} />;
+  }
+
   return (
-    <div className="flex flex-col gap-3 p-4 overflow-y-auto flex-1">
-      {messages.map((msg) => {
-        const isUser = msg.role === "user";
-        const isError = msg.role === "error";
+    <div
+      role="log"
+      aria-live="polite"
+      aria-label="Conversation"
+      className="flex-1 overflow-y-auto flex flex-col gap-1 px-4 py-4 bg-(--surface)"
+    >
+      {messages.map((msg, index) => {
+        const prev = messages[index - 1];
+        const next = messages[index + 1];
+        const isFirstInGroup = !prev || prev.role !== msg.role;
+        const isLastInGroup = !next || next.role !== msg.role;
 
         return (
           <div
             key={msg.id}
-            className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+            className={isFirstInGroup ? "mt-3 first:mt-0" : "mt-0.5"}
           >
-            <div
-              className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                isUser
-                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                  : isError
-                  ? "bg-[var(--destructive)] text-white"
-                  : "bg-[var(--muted)] text-[var(--foreground)]"
-              }`}
-            >
-              {msg.pending ? (
-                <TypingIndicator />
-              ) : (
-                <ReactMarkdown>{msg.content}</ReactMarkdown>
-              )}
-            </div>
+            <MessageBubble
+              message={msg}
+              isFirstInGroup={isFirstInGroup}
+              isLastInGroup={isLastInGroup}
+              onRetry={onRetry}
+              typingPhase={typingPhase}
+            />
           </div>
         );
       })}

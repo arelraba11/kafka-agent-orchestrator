@@ -1,5 +1,9 @@
-import { ChatBot } from "./components/chat/ChatBot";
+import ChatBot from "./components/chat/ChatBot";
 
 export default function App() {
-  return <ChatBot />;
+  return (
+    <div className="h-screen bg-(--background) flex">
+      <ChatBot />
+    </div>
+  );
 }

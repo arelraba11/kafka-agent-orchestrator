@@ -9,15 +9,17 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90",
+          "bg-(--primary) text-(--primary-foreground) hover:opacity-90",
         ghost:
-          "hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]",
-        destructive: "bg-[var(--destructive)] text-white hover:opacity-90",
+          "hover:bg-(--accent) hover:text-(--accent-foreground)",
+        destructive: "bg-(--destructive) text-white hover:opacity-90",
+        subtle: "bg-transparent hover:bg-(--surface-2) text-(--foreground-2) hover:text-(--foreground)",
       },
       size: {
         default: "h-9 px-4 py-2",
         sm: "h-8 px-3 text-xs",
         icon: "h-9 w-9",
+        xs: "h-7 w-7 text-xs",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

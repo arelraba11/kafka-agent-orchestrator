@@ -1,45 +1,103 @@
-import { useForm } from "react-hook-form";
+import { useState, useRef, useEffect } from "react";
+import { Send, Loader2 } from "lucide-react";
 import { Button } from "../ui/button";
-import { Send } from "lucide-react";
 
-type FormValues = { message: string };
+const MAX_CHARS = 2000;
+const LINE_HEIGHT = 24;
+const MAX_LINES = 6;
 
-export function ChatInput({
-  onSend,
-  disabled,
-}: {
+interface ChatInputProps {
   onSend: (text: string) => void;
   disabled: boolean;
-}) {
-  const { register, handleSubmit, reset } = useForm<FormValues>();
+  isLoading: boolean;
+  prefill?: string;
+  onPrefillConsumed?: () => void;
+}
 
-  const submit = ({ message }: FormValues) => {
-    if (!message.trim()) return;
-    onSend(message.trim());
-    reset();
+export default function ChatInput({ onSend, disabled, isLoading, prefill, onPrefillConsumed }: ChatInputProps) {
+  const [value, setValue] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (prefill) {
+      setValue(prefill);
+      onPrefillConsumed?.();
+      textareaRef.current?.focus();
+    }
+  }, [prefill]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, LINE_HEIGHT * MAX_LINES) + "px";
+  }, [value]);
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const trimmed = value.trim();
+    if (!trimmed || disabled || isLoading || trimmed.length > MAX_CHARS) return;
+    onSend(trimmed);
+    setValue("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.key === "Enter" && !e.shiftKey) || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  const isOverLimit = value.length > MAX_CHARS;
+  const showCounter = value.length > MAX_CHARS * 0.75;
+  const canSend = !disabled && !isLoading && value.trim().length > 0 && !isOverLimit;
+
   return (
-    <form
-      onSubmit={handleSubmit(submit)}
-      className="flex gap-2 p-4 border-t border-[var(--border)]"
-    >
-      <textarea
-        {...register("message")}
-        disabled={disabled}
-        rows={1}
-        placeholder="Ask something…"
-        className="flex-1 resize-none rounded-md border border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50"
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            handleSubmit(submit)();
-          }
-        }}
-      />
-      <Button type="submit" size="icon" disabled={disabled}>
-        <Send className="h-4 w-4" />
-      </Button>
+    <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 bg-(--surface-2)">
+      <div className="flex flex-col gap-2 rounded-2xl border border-(--border) bg-(--surface-3) p-3 focus-within:border-(--border-strong) focus-within:ring-1 focus-within:ring-(--accent-glow) transition-all">
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          rows={1}
+          placeholder="Ask me anything…"
+          aria-label="Message input"
+          aria-multiline="true"
+          className="w-full resize-none bg-transparent text-sm text-(--foreground) placeholder:text-(--foreground-2) outline-none leading-relaxed disabled:opacity-50"
+          style={{ minHeight: `${LINE_HEIGHT}px` }}
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-(--foreground-2) select-none">
+            <kbd className="border border-(--border) rounded px-1 py-0.5 font-sans">Enter</kbd>
+            {" "}to send · Shift+Enter for new line
+          </span>
+          <div className="flex items-center gap-2">
+            {showCounter && (
+              <span className={`text-[10px] tabular-nums ${isOverLimit ? "text-(--destructive)" : "text-(--foreground-2)"}`}>
+                {value.length}/{MAX_CHARS}
+              </span>
+            )}
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!canSend}
+              aria-label={isLoading ? "Sending…" : "Send message"}
+              className="h-7 w-7 rounded-xl"
+            >
+              {isLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
     </form>
   );
 }
