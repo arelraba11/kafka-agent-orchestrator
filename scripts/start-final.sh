@@ -40,6 +40,9 @@ ensure_topics
 
 # ─── Launch services ─────────────────────────────────────────────────────────
 
+bun run web          > "$LOG_DIR/webserver.log"    2>&1 &
+echo "Started webServer (PID $!)"
+
 bun run router       > "$LOG_DIR/router.log"       2>&1 &
 echo "Started routerService (PID $!)"
 
@@ -71,8 +74,15 @@ echo ""
 echo "FINAL PROJECT SERVICES STARTED"
 echo "Logs in $LOG_DIR/"
 echo ""
-echo "Start the UI manually:"
-echo "  bun run ui"
+echo "Web server running at http://localhost:3001 (log: $LOG_DIR/webserver.log)"
+echo ""
+echo "Start the UI — pick one:"
+echo ""
+echo "  Option A — Terminal UI:"
+echo "    bun run ui"
+echo ""
+echo "  Option B — Web UI (hot reload):"
+echo "    bun run web:dev    # Vite dev server at http://localhost:5173"
 echo ""
 echo "To stop all services:"
 echo "  bun run stop"
