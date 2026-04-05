@@ -34,9 +34,26 @@ ensure_topics() {
   echo "Topics ready."
 }
 
+# ─── Pull Ollama model if Ollama is running ───────────────────────────────────
+pull_ollama_model() {
+  local model="${OLLAMA_MODEL:-llama3.2}"
+  local host="${OLLAMA_HOST:-http://localhost:11434}"
+  echo "Checking Ollama at ${host}..."
+  if curl -sf "${host}/api/tags" >/dev/null 2>&1; then
+    echo "Ollama is running — pulling model '${model}' (skipped if already present)..."
+    curl -sf -X POST "${host}/api/pull" \
+      -H "Content-Type: application/json" \
+      -d "{\"name\":\"${model}\"}" | tail -1
+    echo "Ollama model '${model}' ready."
+  else
+    echo "Ollama not reachable — skipping model pull (will fall back to OpenAI)."
+  fi
+}
+
 # ─── Run pre-flight checks ────────────────────────────────────────────────────
 wait_for_kafka
 ensure_topics
+pull_ollama_model
 
 # ─── Launch services ─────────────────────────────────────────────────────────
 
