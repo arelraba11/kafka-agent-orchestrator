@@ -1,93 +1,58 @@
-# Gradle
-.gradle/
-build/
-**/build/
-
-# Gradle wrapper
-!gradlew
-!gradlew.bat
-!gradle/wrapper/gradle-wrapper.jar
-!gradle/wrapper/gradle-wrapper.properties
-
-# Java
-*.class
-*.jar
-*.war
-*.ear
-**/bin/
-
-# Logs
-*.log
-logs/
-scripts/logs/
-
-# Environment variables
+# ─── Environment ──────────────────────────────────────────────────────────────
 .env
 
-# IDE
-.idea/
-.vscode/
-*.iws
-out/
-
-# OS
-.DS_Store
-*.swp
-*.swo
-
-# JVM crash logs
-hs_err_pid*
-
-# Node / Bun
+# ─── Node / Bun ───────────────────────────────────────────────────────────────
 node_modules/
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
-# TypeScript build output
+# ─── TypeScript build output ──────────────────────────────────────────────────
+# Commit the built frontend so reviewers don't need to run a build step
 dist/
+!src/frontend/dist/
 *.tsbuildinfo
 
-# Runtime data
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+scripts/logs/
+
+# ─── Runtime data ─────────────────────────────────────────────────────────────
 history.json
+.plan-store/
 
-# Temporary files
-tmp/
-temp/
-.cache/
-
-# Docker
-docker-compose.override.yml
-
-# Coverage
-coverage/
-
-# Python
+# ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-
-# Python virtual environments
 venv/
 .venv/
 env/
 ENV/
-
-# Python caches
 .pytest_cache/
 .mypy_cache/
-.ipynb_checkpoints/
-
-# Python packaging
 *.egg-info/
 
-# Local vector databases
+# ─── Local vector database (rebuild with: python rag/index_kb.py) ─────────────
 src/python/rag/chroma_db/
 
-# Claude files
+# ─── IDE / OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ─── Misc ─────────────────────────────────────────────────────────────────────
+tmp/
+temp/
+.cache/
+coverage/
+
+# ─── Claude Code (internal dev files) ────────────────────────────────────────
 .claude/
 CLAUDE.md
-
-# LevelDB state store
-.plan-store/
