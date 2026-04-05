@@ -10,7 +10,9 @@
     "math": "bun src/node/apps/mathApp.ts",
     "weather": "bun src/node/apps/weatherApp.ts",
     "exchange": "bun src/node/apps/exchangeApp.ts",
-    "chat": "bun src/node/apps/generalChatApp.ts"
+    "chat": "bun src/node/apps/generalChatApp.ts",
+    "web": "bun src/node/core/webServer.ts",
+    "web:dev": "cd src/frontend && bun run dev"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",
