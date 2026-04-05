@@ -40,28 +40,28 @@ ensure_topics
 
 # ─── Launch services ─────────────────────────────────────────────────────────
 
-bun run src/node/core/routerService.ts                  > "$LOG_DIR/router.log"       2>&1 &
+bun run router       > "$LOG_DIR/router.log"       2>&1 &
 echo "Started routerService (PID $!)"
 
-bun run src/node/orchestration/orchestrator.ts          > "$LOG_DIR/orchestrator.log" 2>&1 &
+bun run orchestrator > "$LOG_DIR/orchestrator.log" 2>&1 &
 echo "Started orchestrator (PID $!)"
 
-bun run src/node/orchestration/aggregator.ts            > "$LOG_DIR/aggregator.log"   2>&1 &
+bun run aggregator   > "$LOG_DIR/aggregator.log"   2>&1 &
 echo "Started aggregator (PID $!)"
 
-bun run src/node/apps/mathApp.ts                        > "$LOG_DIR/math.log"         2>&1 &
+bun run math         > "$LOG_DIR/math.log"         2>&1 &
 echo "Started mathApp (PID $!)"
 
-bun run src/node/apps/weatherApp.ts                     > "$LOG_DIR/weather.log"      2>&1 &
+bun run weather      > "$LOG_DIR/weather.log"      2>&1 &
 echo "Started weatherApp (PID $!)"
 
-bun run src/node/apps/exchangeApp.ts                    > "$LOG_DIR/exchange.log"     2>&1 &
+bun run exchange     > "$LOG_DIR/exchange.log"     2>&1 &
 echo "Started exchangeApp (PID $!)"
 
-bun run src/node/apps/generalChatApp.ts                 > "$LOG_DIR/chat.log"         2>&1 &
+bun run chat         > "$LOG_DIR/chat.log"         2>&1 &
 echo "Started generalChatApp (PID $!)"
 
-bun run src/node/orchestration/answerSynthesizer.ts     > "$LOG_DIR/answer.log"       2>&1 &
+bun run synthesizer  > "$LOG_DIR/answer.log"       2>&1 &
 echo "Started answerSynthesizer (PID $!)"
 
 src/python/venv/bin/python -u src/python/rag/rag_retriever.py > "$LOG_DIR/rag.log"   2>&1 &
@@ -72,7 +72,7 @@ echo "FINAL PROJECT SERVICES STARTED"
 echo "Logs in $LOG_DIR/"
 echo ""
 echo "Start the UI manually:"
-echo "  bun run src/node/core/userInterface.ts"
+echo "  bun run ui"
 echo ""
 echo "To stop all services:"
 echo "  bash scripts/stop-all.sh"

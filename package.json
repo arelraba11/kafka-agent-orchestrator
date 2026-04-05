@@ -1,7 +1,16 @@
 {
   "scripts": {
-    "start": "./scripts/start-final.sh",
-    "stop": "./scripts/stop-all.sh"
+    "start": "bash ./scripts/start-final.sh",
+    "stop": "bash ./scripts/stop-all.sh",
+    "ui": "bun src/node/core/userInterface.ts",
+    "router": "bun src/node/core/routerService.ts",
+    "orchestrator": "bun src/node/orchestration/orchestrator.ts",
+    "aggregator": "bun src/node/orchestration/aggregator.ts",
+    "synthesizer": "bun src/node/orchestration/answerSynthesizer.ts",
+    "math": "bun src/node/apps/mathApp.ts",
+    "weather": "bun src/node/apps/weatherApp.ts",
+    "exchange": "bun src/node/apps/exchangeApp.ts",
+    "chat": "bun src/node/apps/generalChatApp.ts"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",

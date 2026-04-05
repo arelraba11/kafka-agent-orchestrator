@@ -79,14 +79,26 @@ async function emitPlanFailed(
   failedTool: string,
   completedResults: Record<string, unknown>[]
 ): Promise<void> {
+  const now = Date.now();
+
   const planFailed: PlanFailed = {
     conversationId,
-    timestamp: Date.now(),
+    timestamp: now,
     eventType: "PlanFailed",
     payload: { reason, failedTool, completedResults },
   };
   await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planFailed);
+
+  await sendMessage(producer, TOPICS.DEAD_LETTER_QUEUE, conversationId, {
+    conversationId,
+    timestamp: now,
+    source: "orchestrator",
+    reason,
+    failedTool,
+  });
+
   console.log(`[orchestrator] conversationId=${conversationId} plan FAILED reason=${reason}`);
+  console.log(`[orchestrator] conversationId=${conversationId} dead-letter published`);
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────

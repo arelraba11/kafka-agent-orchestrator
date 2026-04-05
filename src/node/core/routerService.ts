@@ -108,20 +108,34 @@ await subscribeAndRun(
     if (event.eventType !== "UserQueryReceived") return;
 
     const { conversationId, payload } = event;
-    const steps = await generatePlanLLM(payload.userInput);
 
-    const planEvent: PlanGenerated = {
-      conversationId,
-      timestamp: Date.now(),
-      eventType: "PlanGenerated",
-      payload: { steps },
-    };
+    try {
+      const steps = await generatePlanLLM(payload.userInput);
 
-    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
+      const planEvent: PlanGenerated = {
+        conversationId,
+        timestamp: Date.now(),
+        eventType: "PlanGenerated",
+        payload: { steps },
+      };
 
-    const routerLatency = Date.now() - event.timestamp;
-    console.log(`[router] conversationId=${conversationId} plan=[${steps.map(s => s.tool).join(", ")}] input="${payload.userInput}"`);
-    console.log(`[Benchmark] conversationId=${conversationId} routerLatency=${routerLatency}ms`);
+      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
+
+      const routerLatency = Date.now() - event.timestamp;
+      console.log(`[router] conversationId=${conversationId} plan=[${steps.map(s => s.tool).join(", ")}] input="${payload.userInput}"`);
+      console.log(`[Benchmark] conversationId=${conversationId} routerLatency=${routerLatency}ms`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`[router] conversationId=${conversationId} unrecoverable error: ${reason}`);
+      await sendMessage(producer, TOPICS.DEAD_LETTER_QUEUE, conversationId, {
+        conversationId,
+        timestamp: Date.now(),
+        source: "router",
+        reason,
+        userInput: payload.userInput,
+      });
+      console.log(`[router] conversationId=${conversationId} dead-letter published`);
+    }
   }
 );
 
