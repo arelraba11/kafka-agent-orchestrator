@@ -52,7 +52,7 @@ The Aggregator acts as the CQRS bridge: it reads the read-side (`PlanCompleted` 
 
 ### Microservices Architecture
 
-Eight independent services, each in its own file, each with its own consumer group, each deployable and restartable independently:
+Ten independent services, each in its own file, each with its own consumer group, each deployable and restartable independently:
 
 | Service | Binary | Responsibility |
 |---|---|---|
@@ -60,12 +60,19 @@ Eight independent services, each in its own file, each with its own consumer gro
 | RouterService | `src/node/core/routerService.ts` | Plan generation |
 | Orchestrator | `src/node/orchestration/orchestrator.ts` | State machine + tool dispatch |
 | Aggregator | `src/node/orchestration/aggregator.ts` | Orchestration / synthesis bridge |
-| AnswerSynthesizer | `src/node/orchestration/answerSynthesizer.ts` | LLM synthesis |
+| AnswerSynthesizer | `src/node/orchestration/answerSynthesizer.ts` | LLM synthesis (orchestrationSynthesis) |
 | mathApp | `src/node/apps/mathApp.ts` | Math tool worker |
 | weatherApp | `src/node/apps/weatherApp.ts` | Weather tool worker |
 | exchangeApp | `src/node/apps/exchangeApp.ts` | Currency exchange worker |
-| generalChatApp | `src/node/apps/generalChatApp.ts` | Chat / RAG worker |
-| RAG Retriever | `src/python/rag/rag_retriever.py` | Product knowledge retrieval |
+| generalChatApp | `src/node/apps/generalChatApp.ts` | generalChat tool worker |
+| RAG Retriever | `src/python/rag/rag_retriever.py` | getProductInformation tool worker (RAG) |
+
+> **Design note — `llm-inference-worker.ts` split:** The course spec describes a single `llm-inference-worker.ts` handling three logical roles: `generalChat`, `ragGeneration`, and `orchestrationSynthesis`. This implementation separates them into purpose-built services for better fault isolation and single-responsibility:
+> - **`generalChatApp.ts`** handles the `chat` tool (generalChat) with deterministic pattern matching — no LLM cold-start latency for simple conversational responses.
+> - **`rag_retriever.py`** handles the `getProductInformation` tool — ChromaDB vector retrieval runs in Python, the natural home for the `sentence-transformers` embedding model.
+> - **`answerSynthesizer.ts`** handles final synthesis (orchestrationSynthesis) as a dedicated pipeline stage, consuming `SynthesizeFinalAnswerRequested` from `user-commands` rather than `tool-invocation-requests` — this decouples it from the tool dispatch loop and lets it receive the full aggregated result set in one event.
+>
+> Each service has its own consumer group, independent restart, and distinct log file, satisfying the microservices isolation requirement.
 
 ---
 
