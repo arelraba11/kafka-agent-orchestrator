@@ -507,7 +507,9 @@ The architecture applies **Command-Query Responsibility Segregation** cleanly:
 - **Sequential tool execution:** The Orchestrator dispatches tools one at a time. For independent parallel steps (e.g. weather and exchange simultaneously), this adds unnecessary round-trip latency.
 - **LLM dominance:** The Kafka pipeline contributes under 20 ms; the synthesis LLM call contributes ~2.46 s. Latency improvements to the Kafka layer have negligible end-to-end impact.
 - **Single-broker limitation:** Running a single Kafka broker with a replication factor of 1 means the broker itself is a single point of failure. Appropriate for development; not for production.
-- **In-memory synthesizer cache:** The AnswerSynthesizer's `userInput` cache is in-memory only. An orchestrator restart would lose cached queries for in-flight conversations.
+- **In-memory synthesizer cache:** The AnswerSynthesizer's `userInput` cache is in-memory only. A synthesizer restart would lose cached queries for in-flight conversations.
+- **Aggregator state store (not implemented):** The course spec marks the Aggregator's state store as optional. The current Aggregator is a pure passthrough (`PlanCompleted → SynthesizeFinalAnswerRequested`). The accumulated `ToolInvocationResulted` results are forwarded directly via the `PlanCompleted` payload, so no additional state reconstruction is necessary. A state store would only be needed if the Aggregator had to re-join results independently from the orchestrator — an architectural choice that adds complexity with no benefit here.
+- **Runtime schema validation (not implemented):** Event schemas are defined as both TypeScript interfaces (`shared/schemas/`) and JSON Schema files (`src/schemas/`). Compile-time type safety covers producer correctness. Runtime validation (e.g. Zod) at consumer boundaries was omitted to keep service code concise; the JSON Schema files serve as the contractual reference for a future Schema Registry integration (see Future Improvements).
 
 ### 5. Future Improvements
 
