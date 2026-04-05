@@ -19,7 +19,8 @@ Rules:
 - A query may require multiple steps. List them in the order they should execute.
 - When a later step depends on the result of an earlier step, use the placeholder syntax {{step_N.result}} (N is 0-based) inside the args value.
 - If the query does not match any specialised tool, use the "chat" tool as the sole step.
-- For harmful, dangerous, or nonsensical queries, use the "chat" tool as the sole step.`;
+- For harmful, dangerous, or nonsensical queries, use the "chat" tool as the sole step.
+- NEVER use the math tool with {{step_N.result}} placeholders — the math tool only accepts numeric literals (e.g. "370000 / 3700"). When the numbers come from prior tool results (e.g. RAG), omit the math step and let the synthesizer compute the answer from the text results.`;
 
 const FEW_SHOT_EXAMPLES = `Examples:
 
@@ -41,11 +42,20 @@ Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone"}}]}
 User: "what are the prices of the iPhone and MacBook?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}}]}
 
+User: "what are the prices of the products you have?"
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}},{"tool":"getProductInformation","args":{"query":"Tesla price"}}]}
+
+User: "what products do you have and how much do they cost?"
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}},{"tool":"getProductInformation","args":{"query":"Tesla price"}}]}
+
 User: "how much would an iPhone cost in Germany?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}
 
 User: "how many MacBooks can I buy for the price of one Tesla? Give a whole number."
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"Tesla price in ILS"}},{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}}]}
+
+User: "how many iPhones can I buy for the price of one Tesla? Give a whole number."
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"Tesla price in ILS"}},{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}}]}
 
 User: "I'm in São Paulo in September, temperature above 30C means I stay home. Should I go out to buy the iPhone?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone"}},{"tool":"weather","args":{"city":"sao paulo"}},{"tool":"chat","args":{"userInput":"The user wants to buy an iPhone in São Paulo in September. Product info: {{step_0.result}}. Weather: {{step_1.result}}. Should they go out or order by phone if temperature is above 30C?"}}]}

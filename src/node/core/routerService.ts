@@ -44,7 +44,7 @@ function generatePlanRegex(userInput: string): PlanStep[] {
   }
 
   if (MATH_REGEX.test(userInput)) {
-    const match = userInput.match(/[\d]+[\s\d+\-*/().]+/);
+    const match = userInput.match(/[(\d][\d\s+\-*/().]+/);
     steps.push({ tool: "math", args: { expression: match ? match[0].trim() : userInput } });
   }
 
