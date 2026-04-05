@@ -56,9 +56,22 @@ Plan: {"steps":[{"tool":"chat","args":{"userInput":"can I use the MacBook to bui
 User: "If I had bought a MacBook a month ago in euros, would it have cost more or less than today?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}`;
 
-export function routerPlanPrompt(userInput: string): string {
-  return `${ROUTER_SYSTEM_PROMPT}
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 
+export function routerPlanPrompt(userInput: string, history?: HistoryMessage[]): string {
+  let historyBlock = "";
+  if (history && history.length > 0) {
+    const lines = history
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+      .join("\n");
+    historyBlock = `\n[Previous conversation]\n${lines}\n`;
+  }
+
+  return `${ROUTER_SYSTEM_PROMPT}
+${historyBlock}
 ${FEW_SHOT_EXAMPLES}
 
 User: "${userInput}"

@@ -11,9 +11,9 @@ The system accepts a natural-language query, plans a sequence of tool calls, exe
 ## Event Flow
 
 ```
-stdin
+WebSocket (browser)
   │
-UserInterface ─── UserQueryReceived ──────────────────────────────────┐
+WebServer ─── UserQueryReceived ──────────────────────────────────────┐
                          │                                            │
                    [user-commands]                                    │
                          │                                            │
@@ -44,7 +44,7 @@ UserInterface ─── UserQueryReceived ────────────�
                          │
                  [conversation-events]
                          │
-                  UserInterface → stdout
+                  WebServer → WebSocket → browser
 ```
 
 ---
@@ -90,10 +90,10 @@ All events share a common envelope:
 
 ## Components
 
-### UserInterface
-**File:** `src/node/core/userInterface.ts` | **Groups:** `ui-service`, `ui-service-final-answer`
+### WebServer
+**File:** `src/node/core/webServer.ts` | **Group:** `ui-web-final-answer`
 
-Reads from `stdin`, generates a `conversationId` (UUID), and publishes `UserQueryReceived` to `user-commands`. Concurrently listens on `conversation-events` and prints `FinalAnswerSynthesized` to stdout. The only component that bridges the human operator to the Kafka cluster; started in a separate terminal after all background services are up.
+Serves the React frontend and bridges WebSocket connections to Kafka. On each new WebSocket connection a `sessionId` is generated (once per tab/session). User messages arrive as WebSocket frames, are wrapped into `UserQueryReceived` events keyed by a fresh `conversationId`, and published to `user-commands`. The server concurrently consumes `conversation-events` and pushes `FinalAnswerSynthesized` (or `PlanFailed`) back to the originating WebSocket. Runs on port 3001.
 
 ---
 

@@ -9,7 +9,7 @@ Prerequisites
 -------------
     docker-compose -f infra/docker-compose.yml up -d
     bun run start
-    bun run ui   # separate terminal
+    open http://localhost:3001   # or: bun run web:dev for hot-reload
 
 Log files are in scripts/logs/final-project-services/.
 Tail any log while typing in the UI:

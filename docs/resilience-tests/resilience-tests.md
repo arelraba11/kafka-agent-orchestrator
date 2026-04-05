@@ -19,7 +19,7 @@ resumes from the last committed offset, so no message is lost.
 Step 1 — Start all services
 
     bash scripts/start-final.sh
-    bun run services/core/userInterface.ts   # separate terminal
+    open http://localhost:3001   # or bun run web:dev for hot-reload
 
 Step 2 — Send a query that triggers the weather worker
 
@@ -74,7 +74,7 @@ restart work normally. This is by design for this course project.
 Step 1 — Start all services
 
     bash scripts/start-final.sh
-    bun run services/core/userInterface.ts   # separate terminal
+    open http://localhost:3001   # or bun run web:dev for hot-reload
 
 Step 2 — Send a few queries and verify they complete
 

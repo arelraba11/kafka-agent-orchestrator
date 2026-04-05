@@ -9,6 +9,7 @@ export interface PlanCompletedPayload {
 
 export interface PlanCompleted {
   conversationId: string;
+  sessionId: string;
   timestamp: number;
   eventType: "PlanCompleted";
   payload: PlanCompletedPayload;

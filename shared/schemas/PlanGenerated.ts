@@ -14,6 +14,7 @@ export interface PlanGeneratedPayload {
 
 export interface PlanGenerated {
   conversationId: string;
+  sessionId: string;
   timestamp: number;
   eventType: "PlanGenerated";
   payload: PlanGeneratedPayload;

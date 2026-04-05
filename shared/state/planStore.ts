@@ -10,6 +10,7 @@ export interface PlanState {
   results: Record<string, unknown>[]; // accumulated tool results
   status: "pending" | "running" | "completed" | "failed";
   planReceivedAt: number;            // epoch ms — used for latency benchmarking
+  sessionId: string;                 // groups conversations into a session for history
 }
 
 // ─── DB instance ──────────────────────────────────────────────────────────────

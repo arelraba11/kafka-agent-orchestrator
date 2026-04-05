@@ -11,13 +11,14 @@ import { synthesisPrompt } from "../../../shared/prompts/synthesisPrompt";
 import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
 import type { SynthesizeFinalAnswerRequested } from "../../../shared/schemas/SynthesizeFinalAnswerRequested";
+import { getHistory, appendToHistory } from "../../../shared/state/historyStore";
 
 // ─── User query cache ─────────────────────────────────────────────────────────
 // user-commands carries both UserQueryReceived and SynthesizeFinalAnswerRequested.
-// We cache userInput by conversationId so the synthesizer can include the
-// original question in the LLM prompt.
+// We cache userInput + sessionId by conversationId so the synthesizer can include
+// the original question in the LLM prompt and write history after answering.
 
-const userQueryCache = new Map<string, string>();
+const userQueryCache = new Map<string, { userInput: string; sessionId: string }>();
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -35,19 +36,26 @@ await subscribeAndRun(
     // Cache user queries as they arrive on user-commands
     if (event.eventType === "UserQueryReceived") {
       const q = event as UserQueryReceived;
-      userQueryCache.set(q.conversationId, q.payload.userInput);
+      userQueryCache.set(q.conversationId, {
+        userInput: q.payload.userInput,
+        sessionId: q.payload.sessionId,
+      });
       return;
     }
 
     if (event.commandType !== "SynthesizeFinalAnswerRequested") return;
 
     const command = event as SynthesizeFinalAnswerRequested;
-    const { conversationId, timestamp: planCompletedAt, payload } = command;
+    const { conversationId, sessionId, timestamp: planCompletedAt, payload } = command;
 
     console.log(`[synthesizer] conversationId=${conversationId} results=${payload.results.length}`);
 
-    const userQuery = userQueryCache.get(conversationId) ?? "";
+    const cached = userQueryCache.get(conversationId);
+    const userQuery = cached?.userInput ?? "";
+    const resolvedSessionId = sessionId ?? cached?.sessionId ?? "";
     userQueryCache.delete(conversationId);
+
+    const history = await getHistory(resolvedSessionId);
 
     const toolResults = payload.results.map((r) => {
       const item = r as { toolName: string; result: Record<string, unknown> };
@@ -58,7 +66,7 @@ await subscribeAndRun(
       };
     });
 
-    const answer = await callLLM(synthesisPrompt(userQuery, toolResults));
+    const answer = await callLLM(synthesisPrompt(userQuery, toolResults, history));
 
     const finalEvent: FinalAnswerSynthesized = {
       conversationId,
@@ -68,6 +76,10 @@ await subscribeAndRun(
     };
 
     await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, finalEvent);
+
+    if (resolvedSessionId) {
+      await appendToHistory(resolvedSessionId, userQuery, answer);
+    }
 
     const synthesizerLatency = Date.now() - planCompletedAt;
     console.log(`[synthesizer] conversationId=${conversationId} answer="${answer}"`);

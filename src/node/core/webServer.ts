@@ -16,6 +16,10 @@ const DIST_DIR = join(import.meta.dir, "../../../src/frontend/dist");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pending = new Map<string, any>();
 
+// Map<WebSocket, sessionId> — one sessionId per browser tab / connection
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sessions = new Map<any, string>();
+
 const producer = await createProducer();
 const consumer = await createConsumer(CONSUMER_GROUP);
 registerShutdown([producer, consumer]);
@@ -76,7 +80,8 @@ Bun.serve({
   },
 
   websocket: {
-    open(_ws) {
+    open(ws) {
+      sessions.set(ws, crypto.randomUUID());
       console.log("[webserver] client connected");
     },
 
@@ -87,6 +92,7 @@ Bun.serve({
       if (!userInput) return;
 
       const conversationId = crypto.randomUUID();
+      const sessionId = sessions.get(ws) ?? crypto.randomUUID();
 
       // Register BEFORE producing — closes race window
       pending.set(conversationId, ws);
@@ -95,11 +101,11 @@ Bun.serve({
         conversationId,
         timestamp: Date.now(),
         eventType: "UserQueryReceived",
-        payload: { userInput },
+        payload: { userInput, sessionId },
       });
 
       ws.send(JSON.stringify({ type: "ack", conversationId }));
-      console.log(`[webserver] conversationId=${conversationId} query="${userInput}"`);
+      console.log(`[webserver] conversationId=${conversationId} sessionId=${sessionId} query="${userInput}"`);
     },
 
     close(ws) {
@@ -107,6 +113,7 @@ Bun.serve({
       for (const [id, socket] of pending.entries()) {
         if (socket === ws) pending.delete(id);
       }
+      sessions.delete(ws);
       console.log("[webserver] client disconnected");
     },
   },

@@ -20,7 +20,7 @@ unprocessed `ToolInvocationRequested` events automatically.
 ```bash
 # 1. Start all services
 bash scripts/start-final.sh
-bun run services/core/userInterface.ts   # separate terminal
+open http://localhost:3001   # or bun run web:dev for hot-reload
 
 # 2. Send a query that routes to the math worker
 #    Type in the UI:
@@ -75,7 +75,7 @@ resumed; new plans begin normally.
 ```bash
 # 1. Start all services
 bash scripts/start-final.sh
-bun run services/core/userInterface.ts   # separate terminal
+open http://localhost:3001   # or bun run web:dev for hot-reload
 
 # 2. Verify end-to-end works
 #    Type in the UI:

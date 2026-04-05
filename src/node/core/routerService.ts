@@ -10,6 +10,7 @@ import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceive
 import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
 import { callLLM } from "../../../shared/llm/openai";
 import { routerPlanPrompt } from "../../../shared/prompts/routerPlanPrompt";
+import { getHistory } from "../../../shared/state/historyStore";
 
 // ─── Regex fallback planner ───────────────────────────────────────────────────
 
@@ -62,9 +63,10 @@ function generatePlanRegex(userInput: string): PlanStep[] {
 
 const VALID_TOOLS = new Set(["weather", "exchange", "math", "chat", "getProductInformation"]);
 
-async function generatePlanLLM(userInput: string): Promise<PlanStep[]> {
+async function generatePlanLLM(userInput: string, sessionId: string): Promise<PlanStep[]> {
   try {
-    const raw = await callLLM(routerPlanPrompt(userInput));
+    const history = await getHistory(sessionId);
+    const raw = await callLLM(routerPlanPrompt(userInput, history));
     const parsed = JSON.parse(raw);
 
     if (
@@ -93,6 +95,7 @@ async function generatePlanLLM(userInput: string): Promise<PlanStep[]> {
   }
 }
 
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 const producer = await createProducer();
@@ -108,12 +111,14 @@ await subscribeAndRun(
     if (event.eventType !== "UserQueryReceived") return;
 
     const { conversationId, payload } = event;
+    const sessionId = payload.sessionId;
 
     try {
-      const steps = await generatePlanLLM(payload.userInput);
+      const steps = await generatePlanLLM(payload.userInput, sessionId);
 
       const planEvent: PlanGenerated = {
         conversationId,
+        sessionId,
         timestamp: Date.now(),
         eventType: "PlanGenerated",
         payload: { steps },

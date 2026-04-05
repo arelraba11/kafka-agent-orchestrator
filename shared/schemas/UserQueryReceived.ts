@@ -5,6 +5,7 @@
 
 export interface UserQueryReceivedPayload {
   userInput: string;
+  sessionId: string;
 }
 
 export interface UserQueryReceived {

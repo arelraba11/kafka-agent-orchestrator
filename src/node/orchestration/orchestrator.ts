@@ -116,6 +116,7 @@ async function onPlanGenerated(
     results: [],
     status: "pending",
     planReceivedAt: Date.now(),
+    sessionId: event.sessionId,
   });
 
   console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.map(s => s.tool).join(", ")}]`);
@@ -177,6 +178,7 @@ async function onToolInvocationResulted(
 
   const planCompleted: PlanCompleted = {
     conversationId,
+    sessionId: state.sessionId,
     timestamp: Date.now(),
     eventType: "PlanCompleted",
     payload: { results: updatedResults },

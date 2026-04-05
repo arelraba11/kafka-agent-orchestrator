@@ -15,7 +15,7 @@ async function onPlanCompleted(
   producer: Awaited<ReturnType<typeof createProducer>>,
   event: PlanCompleted
 ): Promise<void> {
-  const { conversationId, payload } = event;
+  const { conversationId, sessionId, payload } = event;
   const { results } = payload;
 
   console.log(
@@ -24,6 +24,7 @@ async function onPlanCompleted(
 
   const command: SynthesizeFinalAnswerRequested = {
     conversationId,
+    sessionId,
     timestamp: Date.now(),
     commandType: "SynthesizeFinalAnswerRequested",
     payload: { results },

@@ -15,7 +15,7 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state ch
 │   USER                                                                      │
 │    │  types question                                                        │
 │    ▼                                                                        │
-│  userInterface.ts / webServer.ts                                            │
+│  webServer.ts                                                               │
 │    │  produces:  UserQueryReceived { conversationId, userInput }            │
 │    │  topic:     user-commands                                              │
 │    ▼                                                                        │
@@ -62,7 +62,7 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state ch
 │    │  produces:  FinalAnswerSynthesized { answer }                          │
 │    │  topic:     conversation-events                                        │
 │    ▼                                                                        │
-│  userInterface.ts / webServer.ts  (consumer loop)                           │
+│  webServer.ts  (consumer loop)                                              │
 │    │  reads:     FinalAnswerSynthesized matching conversationId             │
 │    ▼                                                                        │
 │   USER                                                                      │
@@ -91,7 +91,6 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state ch
 
 | Service | File | Consumer Group | Produces to |
 |---|---|---|---|
-| UserInterface | `src/node/core/userInterface.ts` | `ui-final-answer` | `user-commands` |
 | WebServer | `src/node/core/webServer.ts` | `ui-web-final-answer` | `user-commands` |
 | RouterService | `src/node/core/routerService.ts` | `router-plan-service` | `conversation-events` |
 | Orchestrator | `src/node/orchestration/orchestrator.ts` | `orchestrator-service` | `tool-invocation-requests`, `conversation-events` |
@@ -131,13 +130,11 @@ cd ../..
 ### Run
 
 ```bash
-bun run start    # start 10 background services incl. webServer (logs → scripts/logs/final-project-services/)
+bun run start    # start background services incl. webServer (logs → scripts/logs/final-project-services/)
 
-# Option A — Terminal UI
-bun run ui
-
-# Option B — Web UI (webServer already running, just start Vite)
-bun run web:dev    # http://localhost:5173 (hot reload, proxies /ws → port 3001)
+# Open the Web UI at http://localhost:3001
+# Or for hot-reload dev mode:
+bun run web:dev    # http://localhost:5173 (proxies /ws → port 3001)
 
 bun run stop     # stop everything
 ```
@@ -261,7 +258,7 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 ├── src/
 │   ├── frontend/                      # React 19 + Vite web UI
 │   ├── node/
-│   │   ├── core/                      # userInterface.ts, routerService.ts, webServer.ts
+│   │   ├── core/                      # routerService.ts, webServer.ts
 │   │   ├── orchestration/             # orchestrator.ts, aggregator.ts, answerSynthesizer.ts
 │   │   └── apps/                      # mathApp, weatherApp, exchangeApp, generalChatApp
 │   └── python/
