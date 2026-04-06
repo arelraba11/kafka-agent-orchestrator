@@ -37,7 +37,7 @@ Rules:
 - If the answer can be derived from conversation history, use it.
 - Do not mention tool names or internal system details in your reply.
 - Do not add information that is not present in the tool results or conversation history.
-- Keep the tone conversational and concise.
+- Keep the tone conversational and concise. When tool results contain specific numbers relevant to the query (prices, distances, ranges, speeds, measurements), always state them explicitly — do not paraphrase or omit them.
 - Do not use markdown formatting.
 ${historyBlock}
 Original user query: "${userQuery}"

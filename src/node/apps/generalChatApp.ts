@@ -19,6 +19,8 @@ interface Rule {
 const GUARDRAIL_RULES: Rule[] = [
   { pattern: /\b(bomb|weapon|explosive|poison|kill|harm|attack|illegal)\b/i,
     response: "I'm not able to help with that request. Please ask me something else." },
+  { pattern: /\b(hack|hacking|exploit|malware|ransomware|phishing|scam|fraud|bypass security|steal data|cybercrime|crack password|sql injection|brute.?force)\b/i,
+    response: "I'm not able to help with that request. Please ask me something else." },
 ];
 
 const RULES: Rule[] = [
