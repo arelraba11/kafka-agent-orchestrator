@@ -1,7 +1,7 @@
 {
   "scripts": {
-    "start": "bash ./scripts/start-final.sh",
-    "stop": "bash ./scripts/stop-all.sh",
+    "start": "bun scripts/start.ts",
+    "stop": "bun scripts/stop.ts",
     "router": "bun src/node/core/routerService.ts",
     "orchestrator": "bun src/node/orchestration/orchestrator.ts",
     "aggregator": "bun src/node/orchestration/aggregator.ts",
