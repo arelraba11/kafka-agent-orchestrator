@@ -78,7 +78,13 @@ User: "I want to buy 2 iPhones and 1 MacBook in Japan. What will be the total co
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"JPY","amount":"{{step_0.result}}"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"JPY","amount":"{{step_1.result}}"}}]}
 
 User: "If I travel to New York, check the weather and calculate how many iPhones I can buy with 3000 USD."
-Plan: {"steps":[{"tool":"weather","args":{"city":"new york"}},{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"ILS","amount":3000}}]}`;
+Plan: {"steps":[{"tool":"weather","args":{"city":"new york"}},{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"ILS","amount":3000}}]}
+
+User: "A store offers a 15% discount on all items. What's the discounted price of your most expensive product, and how many units could I buy with $500 after the discount?"
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"most expensive product price in USD"}},{"tool":"chat","args":{"userInput":"Product info: {{step_0.result}}. Apply a 15% discount to the most expensive product price. Then calculate how many discounted units a customer could buy with $500. Show the discounted price and the unit count."}}]}
+
+User: "How much would the iPhone cost after a 20% holiday sale?"
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in USD"}},{"tool":"chat","args":{"userInput":"iPhone product info: {{step_0.result}}. Calculate the price after a 20% discount."}}]}`;
 
 export interface HistoryMessage {
   role: "user" | "assistant";

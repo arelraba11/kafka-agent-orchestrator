@@ -39,6 +39,10 @@ await subscribeAndRun(
     const ws = pending.get(event.conversationId);
     if (!ws) return; // belongs to terminal UI or another client
 
+    if (event.eventType === "ToolInvocationResulted") {
+      ws.send(JSON.stringify({ type: "tool", toolName: event.payload.toolName }));
+    }
+
     if (event.eventType === "FinalAnswerSynthesized") {
       pending.delete(event.conversationId);
       ws.send(JSON.stringify({ type: "answer", answer: event.payload.answer }));

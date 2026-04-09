@@ -49,7 +49,7 @@ export default function MessageBubble({
       <div className="animate-message flex flex-col items-end gap-1">
         <div
           className={bubbleRadius(
-            "max-w-[72%] px-4 py-3 text-sm leading-relaxed bg-linear-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/10 rounded-2xl",
+            "max-w-[72%] px-4 py-3 text-sm leading-relaxed bg-linear-to-br from-cyan-500 to-teal-600 text-white shadow-lg shadow-cyan-500/25 rounded-2xl",
             isLastInGroup,
             "right"
           )}
@@ -98,7 +98,7 @@ export default function MessageBubble({
   return (
     <div className="animate-message flex items-end gap-2">
       {isLastInGroup ? (
-        <div className="h-7 w-7 rounded-full bg-linear-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
+        <div className="h-7 w-7 rounded-full bg-linear-to-br from-cyan-400 to-teal-600 flex items-center justify-center shrink-0 shadow-sm shadow-cyan-500/20">
           <Bot className="h-3.5 w-3.5 text-white" />
         </div>
       ) : (
@@ -111,6 +111,7 @@ export default function MessageBubble({
             isLastInGroup,
             "left"
           )}
+          style={{ borderLeftColor: "oklch(0.74 0.14 195 / 0.5)", borderLeftWidth: "2px" }}
         >
           {message.pending ? (
             <TypingIndicator phase={typingPhase} />

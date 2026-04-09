@@ -57,7 +57,7 @@ export default function ChatInput({ onSend, disabled, isLoading, prefill, onPref
 
   return (
     <form onSubmit={handleSubmit} className="px-4 pb-4 pt-2 bg-(--surface-2)">
-      <div className="flex flex-col gap-2 rounded-2xl border border-(--border) bg-(--surface-3) p-3 focus-within:border-(--border-strong) focus-within:ring-1 focus-within:ring-(--accent-glow) transition-all">
+      <div className="flex flex-col gap-2 rounded-2xl border border-(--border) bg-(--surface-3) p-3 focus-within:border-(--primary)/50 focus-within:ring-1 focus-within:ring-(--accent-glow) focus-within:[box-shadow:0_0_0_3px_oklch(0.74_0.14_195_/_0.18)] transition-all">
         <textarea
           ref={textareaRef}
           value={value}
