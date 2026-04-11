@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ToolInvocationResulted",
+  "title": "ToolInvocationResulted",
+  "description": "Immutable event emitted by a tool worker after execution. Topic: conversation-events. Producer: tool workers. Consumer: orchestrator.ts, aggregator.ts.",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "eventType", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the conversation (partition key)"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds (Date.now())"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "ToolInvocationResulted"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["toolName", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "description": "Name of the tool that produced this result"
+        },
+        "result": {
+          "type": "object",
+          "description": "Tool output; shape is tool-specific"
+        }
+      }
+    }
+  }
+}

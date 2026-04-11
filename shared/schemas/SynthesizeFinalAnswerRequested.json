@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "SynthesizeFinalAnswerRequested",
+  "title": "SynthesizeFinalAnswerRequested",
+  "description": "Command emitted by the aggregator to trigger final answer synthesis. Topic: user-commands. Producer: aggregator.ts. Consumer: answerSynthesizer.ts.",
+  "type": "object",
+  "required": ["conversationId", "sessionId", "timestamp", "commandType", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the conversation (partition key)"
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "WebSocket session identifier for routing the answer back to the browser"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds (Date.now())"
+    },
+    "commandType": {
+      "type": "string",
+      "const": "SynthesizeFinalAnswerRequested",
+      "description": "Uses commandType (not eventType) to distinguish CQRS commands from events"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["results"],
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "description": "All tool results to be synthesized into the final answer",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

@@ -176,8 +176,10 @@ tool-invocation-requests                PlanCompleted / PlanFailed
 Aggregator = CQRS bridge: PlanCompleted (event) → SynthesizeFinalAnswerRequested (command)
 ```
 
+Separating commands from events means each service has a single, narrow responsibility: producers never need to know who consumes their output, and consumers never mutate shared state. This makes each microservice independently deployable, testable, and replaceable without breaking the rest of the pipeline.
+
 ### Idempotency
-Workers filter by `toolName` — process only their own events. Orchestrator silently drops `ToolInvocationResulted` for unknown `conversationId` (already completed/deleted). Handles Kafka's at-least-once delivery safely.
+Workers filter by `toolName` — process only their own events. Orchestrator silently drops `ToolInvocationResulted` for unknown `conversationId` (already completed/deleted). Handles Kafka's at-least-once delivery safely. Combined with CQRS, this means any event can be replayed without side effects — a critical property for crash recovery and debugging.
 
 ---
 
@@ -196,17 +198,18 @@ Full reproduction steps: [`docs/resilience-tests/resilience-demo.md`](docs/resil
 
 ## Benchmark
 
-Measured across 25 live queries (2026-04-05):
+Measured across 27 live queries (2026-04-05), with session history injection enabled:
 
-| Component | Avg latency | Notes |
-|---|---|---|
-| RouterService | ~1135 ms | LLM plan generation (gpt-4o-mini) |
-| Tool workers (simple) | ~14 ms | weather, exchange, math, chat |
-| Tool workers (RAG) | ~120 ms | ChromaDB retrieval + embedding |
-| AnswerSynthesizer | ~1687 ms | LLM synthesis (gpt-4o-mini) |
-| **End-to-end** | **~2868 ms** | **~2.9 s average** |
+| Component | Model | Avg latency | Throughput | Accuracy (1–5) | Cost |
+|---|---|---|---|---|---|
+| RouterService | gpt-4o-mini | ~1,113 ms | ~0.9 events/s | 5 — correct plan on all 27 queries | ~$0.001/query |
+| AnswerSynthesizer | gpt-4o-mini | ~2,189 ms | ~0.5 events/s | 5 — coherent, history-aware | ~$0.002/query |
+| RAG Retriever | sentence-transformers (local) | ~65 ms | ~15 events/s | 4 — top-3 semantic search | $0 |
+| Tool workers (math/weather/exchange/chat) | — | ~1 ms | ~1000 events/s | 3–5 | $0 |
+| Orchestrator (state machine) | — | ~1 ms/step | ~1000 events/s | 5 — correct sequencing | $0 |
+| **End-to-end** | | **~3,341 ms** | | **5** | **~$0.003/query** |
 
-Kafka pipeline overhead: < 50 ms. 97% of latency is LLM inference.
+Kafka pipeline overhead (all orchestration + tool workers + Kafka round-trips): **< 50 ms**. LLM inference accounts for **~99% of end-to-end latency**.
 
 Full report: [`docs/benchmark.md`](docs/benchmark.md)
 
@@ -214,9 +217,11 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 
 ## Conclusions
 
-**Why Kafka as event store:** Event Sourcing on Kafka provides ordering guarantees, consumer group offset management, and a durable event history in one primitive — impossible to replicate with a mutable DB row.
+**Why Kafka as event store:** Event Sourcing on Kafka provides ordering guarantees, consumer group offset management, and a durable event history in one primitive — impossible to replicate with a mutable DB row. Every action is permanently auditable: replay any `conversationId` from offset 0 to reconstruct exactly what happened, when, and in what order.
 
-**Stateful processing:** The Orchestrator accumulates state incrementally from the event stream rather than polling a DB. `{{step_N.result}}` placeholder resolution enables chained tool data flow without any shared memory.
+**Stateful processing:** The Orchestrator accumulates state incrementally from the event stream rather than polling a DB. `{{step_N.result}}` placeholder resolution enables chained tool data flow without any shared memory. The Aggregator is fully stateless — by the time `PlanCompleted` arrives, all results are embedded in its payload.
+
+**CQRS + Idempotency advantages:** Separating commands (`user-commands`, `tool-invocation-requests`) from facts (`conversation-events`) means each service is independently deployable and testable. Idempotent workers (toolName filter + conversationId guard) make the pipeline safe under Kafka's at-least-once delivery — duplicate events are silently dropped, never double-processed.
 
 **Trade-offs:**
 
@@ -252,8 +257,8 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │   ├── docker-compose.yml             # Kafka (KRaft) + ChromaDB
 │   └── topics-final.sh                # create 4 topics × 3 partitions
 ├── scripts/
-│   ├── start-final.sh                 # launch 9 background services
-│   ├── stop-all.sh
+│   ├── start.ts                       # launch 9 background services
+│   ├── stop.ts
 │   └── logs/final-project-services/   # per-service log files
 ├── src/
 │   ├── frontend/                      # React 19 + Vite web UI
@@ -265,11 +270,10 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │       └── rag/                       # rag_retriever.py, index_kb.py
 ├── shared/
 │   ├── kafka/client.ts                # KafkaJS wrapper
-│   ├── schemas/                       # TypeScript event interfaces
+│   ├── schemas/                       # TypeScript event interfaces + JSON Schema files (8 event types)
 │   ├── prompts/                       # LLM prompt functions
 │   ├── state/planStore.ts             # LevelDB plan persistence
 │   └── topics.ts                      # topic name constants
-├── src/schemas/                       # JSON Schema files (8 event types)
 └── data/products/                     # iphone.txt, macbook.txt, tesla.txt (RAG knowledge base)
 ```
 

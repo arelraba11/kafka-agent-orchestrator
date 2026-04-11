@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "PlanCompleted",
+  "title": "PlanCompleted",
+  "description": "Immutable event emitted by the orchestrator when all plan steps have succeeded. Topic: conversation-events. Producer: orchestrator.ts. Consumer: aggregator.ts.",
+  "type": "object",
+  "required": ["conversationId", "sessionId", "timestamp", "eventType", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the conversation (partition key)"
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "WebSocket session identifier carried forward for final delivery"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds (Date.now())"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "PlanCompleted"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["results"],
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "description": "Ordered array of all ToolInvocationResulted payloads collected during this plan",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

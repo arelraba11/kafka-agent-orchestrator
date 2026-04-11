@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "UserQueryReceived",
+  "title": "UserQueryReceived",
+  "description": "Command sent by the user interface to initiate a conversation. Topic: user-commands. Producer: webServer.ts. Consumer: routerService.ts.",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "eventType", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the conversation (partition key)"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds (Date.now())"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "UserQueryReceived"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["userInput", "sessionId"],
+      "additionalProperties": false,
+      "properties": {
+        "userInput": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The raw text query from the user"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "WebSocket session identifier"
+        }
+      }
+    }
+  }
+}

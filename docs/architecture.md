@@ -219,15 +219,15 @@ Latency is measured via `timestamp` fields in event payloads. Services compute d
 grep "\[Benchmark\]" scripts/logs/final-project-services/*.log
 ```
 
-Three conversations were executed. Measured averages:
+Measured across 27 live queries. Averages:
 
 | Segment | Avg Latency | Source |
 |---|---|---|
-| Router (`routerLatency`) | ~4.7 ms | `router.log` |
-| Workers (`workerLatency`) | ~14 ms | `orchestrator.log` |
-| Synthesizer (`synthesizerLatency`) | ~2458 ms | `answer.log` |
+| Router (`routerLatency`) | ~1,113 ms | `router.log` |
+| Workers (`workerLatency`) | ~39 ms | `orchestrator.log` |
+| Synthesizer (`synthesizerLatency`) | ~2,189 ms | `answer.log` |
 
-**End-to-end: ~2.5 s** — dominated by the single `gpt-4o-mini` call. The Kafka pipeline (router + orchestrator + workers) contributes under 20 ms total.
+**End-to-end: ~3.3 s** — dominated by two `gpt-4o-mini` calls (router + synthesizer). The Kafka pipeline overhead (orchestration + all tool workers + Kafka round-trips) is **under 50 ms total**. Full report: [`docs/benchmark.md`](../benchmark.md)
 
 ---
 

@@ -52,7 +52,7 @@ Step 4 — Send another query while the worker is down
 
 Step 5 — Restart the weather worker
 
-    bun run services/apps/weatherApp.ts >> scripts/logs/final-project-services/weather.log 2>&1 &
+    bun src/node/apps/weatherApp.ts >> scripts/logs/final-project-services/weather.log 2>&1 &
 
     The restarted worker picks up the pending message from Kafka and processes it.
     The pipeline completes and FinalAnswerSynthesized is delivered to the UI.
@@ -67,9 +67,9 @@ Test B — Orchestrator Restart
 Goal: show that restarting the orchestrator does not prevent new requests from
 completing successfully.
 
-Important: the orchestrator holds its plan state in memory only. In-flight
-plans at the moment of a crash are not recovered. New plans started after the
-restart work normally. This is by design for this course project.
+The orchestrator persists plan state to LevelDB via shared/state/planStore.ts.
+On restart, any in-flight plans saved before the crash are restored from LevelDB
+and dispatching resumes from the saved stepIndex. New plans also begin normally.
 
 Step 1 — Start all services
 
@@ -90,7 +90,7 @@ Step 3 — Stop the orchestrator
 
 Step 4 — Restart the orchestrator
 
-    bun run services/orchestration/orchestrator.ts >> scripts/logs/final-project-services/orchestrator.log 2>&1 &
+    bun src/node/orchestration/orchestrator.ts >> scripts/logs/final-project-services/orchestrator.log 2>&1 &
 
 Step 5 — Send a new query
 

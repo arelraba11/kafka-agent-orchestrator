@@ -36,7 +36,7 @@ pkill -f "mathApp.ts"
 #    The plan is pending — no answer arrives yet.
 
 # 5. Restart the math worker
-bun run services/apps/mathApp.ts >> scripts/logs/final-project-services/math.log 2>&1 &
+bun src/node/apps/mathApp.ts >> scripts/logs/final-project-services/math.log 2>&1 &
 
 #    The worker picks up the pending message from the last committed offset,
 #    computes the result, and emits ToolInvocationResulted.
@@ -86,7 +86,7 @@ weather in jerusalem
 pkill -f "orchestrator.ts"
 
 # 4. Restart the orchestrator
-bun run services/orchestration/orchestrator.ts \
+bun src/node/orchestration/orchestrator.ts \
   >> scripts/logs/final-project-services/orchestrator.log 2>&1 &
 
 #    On startup the orchestrator reads LevelDB for any persisted plan state.
@@ -133,10 +133,10 @@ before processing. Events intended for another worker are silently skipped.
 
 ```typescript
 // services/apps/mathApp.ts
-if (req.payload.tool !== "math") return;
+if (req.payload.toolName !== "math") return;
 
 // services/apps/weatherApp.ts
-if (req.payload.tool !== "weather") return;
+if (req.payload.toolName !== "weather") return;
 ```
 
 A duplicate request broadcast to all workers is processed only by the correct

@@ -2,18 +2,19 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "PlanFailed",
   "title": "PlanFailed",
-  "description": "Event emitted by Orchestrator when a plan cannot be completed",
+  "description": "Immutable event emitted by the orchestrator when a plan step fails unrecoverably. Topic: conversation-events. Producer: orchestrator.ts.",
   "type": "object",
   "required": ["conversationId", "timestamp", "eventType", "payload"],
   "additionalProperties": false,
   "properties": {
     "conversationId": {
       "type": "string",
-      "description": "Unique identifier shared across all events in one request"
+      "format": "uuid",
+      "description": "Unique identifier for the conversation (partition key)"
     },
     "timestamp": {
       "type": "integer",
-      "description": "Unix epoch milliseconds at time of production"
+      "description": "Unix timestamp in milliseconds (Date.now())"
     },
     "eventType": {
       "type": "string",
@@ -34,7 +35,7 @@
         },
         "completedResults": {
           "type": "array",
-          "description": "Results from steps that completed before the failure",
+          "description": "Results collected before the failure occurred",
           "items": {
             "type": "object"
           }

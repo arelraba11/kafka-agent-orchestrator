@@ -103,6 +103,36 @@ LLM inference accounts for **~99% of end-to-end latency**.
 
 ---
 
+## Consumer Lag
+
+Consumer lag measures how far behind each consumer group is from the latest offset — a lag of 0 means all messages have been processed.
+
+**How to measure:**
+```bash
+docker exec kafka kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 \
+  --describe --all-groups
+```
+
+**Observed results (measured after 27-query test run):**
+
+| Consumer Group | Topic | LAG | Status |
+|---|---|---|---|
+| `router-plan-service` | `user-commands` | 0 | ✅ fully caught up |
+| `orchestrator-service` | `conversation-events` | 0 | ✅ fully caught up |
+| `answer-synthesizer` | `user-commands` | 0 | ✅ fully caught up |
+| `aggregator-service` | `conversation-events` | 0 | ✅ fully caught up |
+| `math-tool-worker` | `tool-invocation-requests` | 0 | ✅ fully caught up |
+| `weather-tool-worker` | `tool-invocation-requests` | 0 | ✅ fully caught up |
+| `exchange-tool-worker` | `tool-invocation-requests` | 0 | ✅ fully caught up |
+| `chat-tool-worker` | `tool-invocation-requests` | 0 | ✅ fully caught up |
+| `rag-tool-worker` | `tool-invocation-requests` | 0 | ✅ fully caught up |
+| `ui-web-final-answer` | `conversation-events` | 0 | ✅ fully caught up |
+
+**Interpretation:** Lag stays at 0 during normal operation because workers process events faster than they arrive (tool workers < 5 ms per event, LLM calls are the only slowdown and are serialized per conversation). During a worker crash, lag builds on `tool-invocation-requests` for the affected group and drains automatically on restart — this is the mechanism demonstrated in Resilience Scenario 1.
+
+---
+
 ## Analysis
 
 The Kafka pipeline — routing, orchestration, and all tool workers — adds **under 50 ms** of overhead. RAG retrieval adds ~65 ms on average (ChromaDB vector search + sentence-transformer embedding). The dominant cost is LLM inference: the router call (~1.1 s) and synthesis call (~2.2 s) together account for **~99% of end-to-end latency**.

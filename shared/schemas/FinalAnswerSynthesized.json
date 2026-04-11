@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "FinalAnswerSynthesized",
+  "title": "FinalAnswerSynthesized",
+  "description": "Immutable event emitted after OpenAI synthesizes the final answer. Topic: conversation-events. Producer: answerSynthesizer.ts. Consumer: webServer.ts.",
+  "type": "object",
+  "required": ["conversationId", "timestamp", "eventType", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the conversation (partition key)"
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix timestamp in milliseconds (Date.now())"
+    },
+    "eventType": {
+      "type": "string",
+      "const": "FinalAnswerSynthesized"
+    },
+    "payload": {
+      "type": "object",
+      "required": ["answer"],
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The synthesized natural-language answer delivered to the user"
+        }
+      }
+    }
+  }
+}
