@@ -1,0 +1,13 @@
+{
+  "venvPath": "src/python",
+  "venv": "venv",
+  "pythonVersion": "3.12",
+  "include": ["src/python/rag"],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "src/python/venv",
+    "src/python/rag/chroma_db"
+  ]
+}

@@ -1,0 +1,22 @@
+Honda Vehicle
+
+Honda Civic:
+Base Price: $24,000 (Sedan LX) / $24,950 (Hatchback LX)
+Trims: LX, Sport, EX, EX-L, Sport Touring, Si, Type R
+Engine Options:
+  - 2.0L 4-cylinder: 158 hp, 138 lb-ft torque (LX/Sport)
+  - 1.5L turbocharged 4-cylinder: 192 hp, 192 lb-ft torque (EX and above)
+  - Civic Si: 1.5L turbo, 200 hp, 6-speed manual only
+  - Civic Type R: 2.0L VTEC Turbo, 315 hp, 6-speed manual, 0–60 in 5.4 sec
+Transmission: CVT standard; 6-speed manual on Si and Type R
+Fuel Economy: Up to 36 mpg city / 46 mpg highway (1.5T CVT)
+Safety: Honda Sensing suite standard on all trims (CMBS, LKAS, ACC, RDM)
+Infotainment: 7-inch or 9-inch Honda CONNECT touchscreen, Apple CarPlay / Android Auto wireless
+Colors: Sonic Gray Pearl, Aegean Blue, Rallye Red, Lunar Silver, Crystal Black, Boost Blue (Type R)
+Warranty: 3-year/36,000-mile basic, 5-year/60,000-mile powertrain
+
+Honda Financing & Service:
+Honda Financial Services: Financing from 0.9% APR (well-qualified buyers), lease options available
+Honda Care (Extended Warranty): Available up to 8 years / 120,000 miles
+Maintenance Minder: Oil life monitoring system, standard on all models
+Roadside Assistance: 3-year / 36,000-mile roadside assistance included with new vehicle purchase

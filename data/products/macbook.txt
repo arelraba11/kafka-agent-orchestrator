@@ -1,97 +1,24 @@
-Product: MacBook Pro 14-inch (M3 Pro)
-Category: Laptop Computer
-Brand: Apple
-Price: 7,400 ILS (approximately 2,000 USD / 1,850 EUR / 1,580 GBP)
-Release Year: 2023
-Manufactured in: China
-Sold in: Worldwide — including Israel, USA, Germany, UK, Brazil, Japan
+MacBook Product Catalog
 
-Overview:
-The MacBook Pro 14-inch with M3 Pro is Apple's professional-grade laptop, designed for users who need sustained high performance for demanding workloads such as software development, video editing, 3D rendering, and data science. It features a Liquid Retina XDR display with ProMotion technology.
+MacBook Pro 16-inch:
+Price: Starting at $2,000
+Processor: M4 Max chip — 14-core CPU, 32-core GPU, 16-core Neural Engine
+Memory: 36GB / 48GB / 64GB / 96GB / 128GB unified memory
+Storage: 512GB / 1TB / 2TB / 4TB SSD
+Display: 16.2-inch Liquid Retina XDR, 3456×2234, ProMotion 120Hz, 1000 nits sustained / 1600 nits peak
+Battery: Up to 24 hours, 140W USB-C fast charge
+Ports: 3× Thunderbolt 5, HDMI 2.1, SDXC card slot, MagSafe 3, 3.5mm headphone jack
+Colors: Space Black, Silver
+Keyboard: Magic Keyboard with Touch ID, backlit keys, Force Touch trackpad
 
-Processor and Performance:
-- Apple M3 Pro chip (12-core CPU: 6 performance + 6 efficiency; 18-core GPU)
-- Up to 36GB unified memory (LPDDR5, shared CPU/GPU pool)
-- Up to 512GB SSD storage (configurable up to 4TB)
-- Hardware-accelerated ray tracing, mesh shading, and MetalFX upscaling
-- 40 TOPS Neural Engine for on-device machine learning
+AppleCare+ for MacBook Pro:
+Price: $299 (MacBook Pro 14") / $399 (MacBook Pro 16")
+Coverage: Up to three years, two accidental damage incidents per year ($99 screen/external, $299 other), Apple-certified repairs
 
-Display:
-- 14.2-inch Liquid Retina XDR (mini-LED)
-- 3024 x 1964 resolution at 254 ppi
-- ProMotion 120Hz adaptive refresh (1Hz–120Hz)
-- 1000 nits sustained brightness, 1600 nits peak HDR
-- P3 wide color gamut, True Tone, 1,000,000:1 contrast ratio
-
-Battery and Charging:
-- Up to 18 hours battery life (Apple's longest-lasting MacBook Pro ever)
-- 96W USB-C power adapter included
-- MagSafe 3 magnetic charging (fast charge: 50% in 30 minutes)
-- Charges via Thunderbolt 4 port as alternative
-
-Ports and Connectivity:
-- 3x Thunderbolt 4 / USB-C ports (40Gb/s, DisplayPort, power delivery)
-- HDMI 2.1 (supports 8K displays)
-- SDXC card reader (UHS-II, up to 312 MB/s)
-- 3.5mm headphone jack with high-impedance headphone support
-- Wi-Fi 6E (802.11ax, 2.4/5/6GHz)
-- Bluetooth 5.3
-
-Audio and Camera:
-- Six-speaker sound system with force-cancelling woofers and Spatial Audio
-- 1080p FaceTime HD camera with Center Stage
-- Studio-quality three-microphone array with directional beamforming
-
-Storage Options:
-- 512GB SSD — 7,400 ILS (~2,000 USD)
-- 1TB SSD   — 8,500 ILS (~2,300 USD)
-- 2TB SSD   — 10,200 ILS (~2,750 USD)
-- 4TB SSD   — 14,000 ILS (~3,780 USD)
-
-Colors Available:
-Space Black, Silver
-
-Dimensions and Weight:
-- Height: 15.5 mm | Width: 312.6 mm | Depth: 221.2 mm
-- Weight: 1.61 kg (3.5 lbs)
-
-Price Comparisons:
-- The MacBook Pro costs approximately 7,400 ILS.
-- The iPhone 15 Pro costs approximately 3,700 ILS — exactly half the MacBook price.
-- The Tesla Model 3 costs approximately 370,000 ILS — exactly 50x the MacBook price.
-- You could buy 2 iPhones for the price of 1 MacBook.
-- You could buy 50 MacBooks for the price of 1 Tesla Model 3.
-- In euros (EUR), the MacBook costs approximately 1,850 EUR.
-- In US dollars (USD), the MacBook costs approximately 2,000 USD.
-- In British pounds (GBP), the MacBook costs approximately 1,580 GBP.
-- In Japanese yen (JPY), the MacBook costs approximately 300,000 JPY.
-- In Brazilian reais (BRL), the MacBook costs approximately 10,000 BRL.
-
-MacBook Air (M2) — Budget Alternative:
-- Price: 5,400 ILS (~1,460 USD / ~1,350 EUR)
-- Thinner, fanless design (passive cooling)
-- Up to 18 hours battery life
-- M2 chip (8-core CPU, 10-core GPU)
-- Best for everyday tasks: web browsing, email, documents, light coding
-- Not suitable for sustained heavy workloads (thermal throttling)
-
-MacBook Pro vs MacBook Air:
-- MacBook Pro: active cooling, ProMotion display, more ports, higher peak performance
-- MacBook Air: lighter, quieter, cheaper, sufficient for most users
-
-Who Should Buy the MacBook Pro:
-Ideal for professionals who need a portable workstation. Software developers, video editors (Final Cut Pro, DaVinci Resolve), 3D artists (Blender, Cinema 4D), machine learning engineers, and data scientists will see the most benefit.
-
-Recommended for:
-- Software developers and engineers
-- Video and audio producers
-- Data scientists and ML engineers
-- Graphic designers and 3D artists
-
-Not recommended for:
-- Casual users (MacBook Air M2 is sufficient and costs less)
-- Gaming-focused users (limited game library vs Windows)
-- Budget-conscious buyers
-
-Happiness factor:
-The MacBook Pro consistently receives among the highest customer satisfaction ratings of any laptop on the market. Users frequently cite battery life, display quality, and performance-per-watt as standout features. Customer satisfaction scores are typically above 92%.
+Accessories:
+Apple USB-C to MagSafe 3 Cable: $49
+140W USB-C Power Adapter: $79
+Apple Pro Display XDR: $4,999
+Magic Mouse: $79
+Magic Trackpad: $129
+Magic Keyboard with Touch ID: $99

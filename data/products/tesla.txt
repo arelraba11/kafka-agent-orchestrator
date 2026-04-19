@@ -1,114 +1,23 @@
-Product: Tesla Model 3 (Long Range All-Wheel Drive)
-Category: Electric Vehicle (Sedan)
-Brand: Tesla
-Price: 370,000 ILS (approximately 100,000 USD / 92,500 EUR / 79,000 GBP)
-Release Year: 2023 (refreshed Highland model)
-Manufactured in: Gigafactory Shanghai (China) and Fremont, California (USA)
-Sold in: Worldwide — including Israel, USA, Germany, UK, Brazil, Japan
+Tesla Vehicle Catalog
 
-Overview:
-The Tesla Model 3 Long Range is one of the world's best-selling electric vehicles, combining impressive range, advanced driver assistance, and over-the-air software updates that improve the car after purchase. It is a mid-size all-electric sedan and Tesla's most affordable long-range vehicle.
+Tesla Model S
+Base Price: $74,990
+Variant: Model S Long Range — up to 405 miles EPA range
+Variant: Model S Plaid — up to 396 miles, 0–60 mph in 1.99 seconds, 1,020 hp
+Top Speed: 155 mph (Long Range) / 200 mph (Plaid with Track Package)
+Charging: Supercharger V3 up to 250kW, 15 min for 200 miles
+Display: 17-inch horizontal cinematic touchscreen, 12.3-inch front passenger display
+Autopilot: Standard Autopilot included; Full Self-Driving (FSD) available ($8,000 or $99/month)
+Interior: 5-seat or 7-seat configuration (optional)
+Colors: Pearl White, Midnight Silver, Deep Blue, Red Multi-Coat, Stealth Grey, Ultra Red
+Warranty: 4-year/50,000-mile basic, 8-year/150,000-mile battery and drive unit
 
-Range and Performance:
-- EPA-estimated range: 358 miles (576 km) on a single charge
-- 0 to 60 mph (0–97 km/h) in 4.2 seconds
-- 0 to 100 km/h in 4.4 seconds
-- Top speed: 145 mph (233 km/h)
-- Dual motor all-wheel drive (front + rear motors)
-- Regenerative braking captures energy during deceleration
+Full Self-Driving (FSD) Capability
+Price: $8,000 one-time or $99/month subscription
+Features: Navigate on Autopilot, Auto Lane Change, Auto Park, Summon, Traffic Light and Stop Sign Control, Autosteer on city streets
+Note: Requires driver supervision; not fully autonomous
 
-Battery and Charging:
-- Long Range lithium-iron-phosphate (LFP) battery pack
-- Battery retains at least 70% capacity after 150,000 miles (240,000 km)
-- Tesla Supercharger network: over 50,000 connectors in 50+ countries
-- Peak charging rate: up to 250 kW at V3 Supercharger
-- 10% to 80% charge in approximately 25 minutes at V3 Supercharger
-- Home charging (11 kW AC): full charge overnight (~8 hours)
-- Compatible with all public AC chargers (J1772 adapter included)
-
-Autopilot and Safety:
-- Standard Autopilot included: adaptive cruise control, lane centering, auto lane change
-- Traffic-Aware Cruise Control and Autosteer on divided highways
-- Full Self-Driving (FSD) package: Navigate on Autopilot, Smart Summon, Autopark — available as paid upgrade (~30,000 ILS / ~8,000 USD)
-- Hardware: 8 cameras (360-degree vision), ultrasonic sensors
-- Automatic Emergency Braking, Blind Spot Monitoring, Side Collision Warning
-- NHTSA 5-star safety rating in all categories
-- Euro NCAP 5-star safety rating
-
-Interior and Technology:
-- 15.4-inch central touchscreen (landscape orientation) controlling all vehicle functions
-- 9-inch rear passenger touchscreen (2024 Highland refresh)
-- Wireless Apple CarPlay and Android Auto support via aftermarket integration
-- Over-the-air software updates — Tesla regularly pushes new features and improvements for free
-- Premium audio system with 14 speakers, 2 subwoofers, and active noise cancellation
-- Panoramic glass roof with UV and infrared protection (reduces cabin heat by 40%)
-- Wireless phone charging pad (dual)
-- Ventilated front seats (Long Range and Performance trims)
-- Heated front and rear seats
-- Ambient interior lighting
-
-Ecosystem and Connectivity:
-- Tesla mobile app: remote lock/unlock, climate pre-conditioning, charging schedule, trip planner
-- Integration with home Tesla solar panels and Powerwall energy storage
-- Tesla Energy ecosystem: power your home from the car during blackouts (V2H capability in select regions)
-- Navigation: built-in maps with real-time Supercharger availability and routing
-- Built-in dashcam (Sentry Mode) using all 8 cameras
-- Dog Mode and Camp Mode for cabin temperature control
-
-Exterior Colors:
-Pearl White Multi-Coat (standard), Midnight Silver Metallic, Deep Blue Metallic, Solid Black, Ultra Red (+2,200 ILS), Stealth Grey (+1,500 ILS)
-
-Wheel Options:
-18-inch Aero (standard, maximizes range), 19-inch Nova Sport (+1,800 ILS)
-
-Dimensions:
-- Length: 4,720 mm | Width: 1,849 mm | Height: 1,441 mm
-- Wheelbase: 2,875 mm
-- Trunk: 594 L (front) + luggage under hood (front trunk / frunk: 88 L)
-- Seating: 5 passengers
-
-Ownership Costs (annual estimate):
-- Electricity cost (Israel, home charging): ~4,000 ILS/year vs ~15,000 ILS/year for gasoline equivalent
-- Insurance: ~12,000–18,000 ILS/year (varies)
-- Maintenance: minimal (no oil changes, fewer brake replacements due to regen braking)
-- Road tax in Israel: reduced for electric vehicles
-
-Price Comparisons:
-- The Tesla Model 3 costs approximately 370,000 ILS.
-- The iPhone 15 Pro costs approximately 3,700 ILS — the Tesla costs exactly 100x more.
-- The MacBook Pro costs approximately 7,400 ILS — the Tesla costs exactly 50x more.
-- You could buy 100 iPhones for the price of 1 Tesla Model 3.
-- You could buy 50 MacBooks for the price of 1 Tesla Model 3.
-- In euros (EUR), the Tesla costs approximately 92,500 EUR.
-- In US dollars (USD), the Tesla costs approximately 100,000 USD.
-- In British pounds (GBP), the Tesla costs approximately 79,000 GBP.
-- In Japanese yen (JPY), the Tesla costs approximately 15,000,000 JPY.
-- In Brazilian reais (BRL), the Tesla costs approximately 500,000 BRL.
-
-Model Variants:
-- Standard Range (RWD): 305,000 ILS (~82,500 USD) — 272 miles range
-- Long Range (AWD): 370,000 ILS (~100,000 USD) — 358 miles range  ← this product
-- Performance (AWD): 415,000 ILS (~112,000 USD) — 315 miles range, 0–60 in 3.1s
-
-Who Should Buy the Tesla Model 3:
-The Tesla Model 3 is ideal for drivers who want to eliminate fuel costs, reduce environmental impact, and benefit from cutting-edge software and autonomous driving technology. It is particularly cost-effective for high-mileage drivers in countries with cheap electricity.
-
-Recommended for:
-- Daily commuters (long range eliminates range anxiety)
-- Tech-forward drivers who enjoy software updates and automation
-- Environmentally conscious buyers
-- Drivers in cities with good Supercharger coverage
-
-Not recommended for:
-- Buyers in countries with limited charging infrastructure
-- Very long rural road trips without Supercharger stations nearby
-- Budget buyers (entry-level options from other brands available below 100,000 ILS)
-
-Climate and Buying Considerations:
-- The car operates in temperatures from -30°C to +50°C, but range decreases significantly in extreme cold (below 0°C, expect 20–30% range reduction).
-- In hot climates (above 35°C), the battery thermal management system activates, which may use extra energy but protects battery longevity.
-- In cities with temperatures regularly above 30°C (e.g., São Paulo, Brazil in summer), the car's air conditioning and battery cooling add extra energy draw. Consider scheduling charging during off-peak electricity hours.
-- For buyers in São Paulo: temperatures in late September typically range from 15°C to 28°C — usually below the 30°C threshold, making it a comfortable season to purchase and use the vehicle.
-
-Happiness factor:
-Tesla Model 3 owners report extremely high satisfaction, driven by low running costs, software improvements over time, and the overall driving experience. J.D. Power and Consumer Reports rank Tesla among the top brands for owner satisfaction in the EV segment. Customer satisfaction scores are typically above 88%.
+Tesla Charging Solutions
+Home Wall Connector: $400 + installation, up to 44 miles per hour of charge
+Supercharger Network: 50,000+ Superchargers globally, pay per kWh
+Mobile Connector: Included with new vehicles, J1772 adapter included

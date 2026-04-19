@@ -11,7 +11,7 @@ Available tools:
 - exchange      args: { "currencyCode": string, "targetCurrency": string, "amount": number }
 - math          args: { "expression": string }  — only arithmetic expressions with digits and operators
 - chat          args: { "userInput": string }   — general questions, safety/guardrail queries, or queries that don't match another tool
-- getProductInformation  args: { "query": string }  — product or tech questions about iPhone, MacBook, or Tesla
+- getProductInformation  args: { "query": string }  — product or tech questions about iPhone, iPad, MacBook, Tesla, or Honda
 
 Rules:
 - Respond with ONLY a valid JSON object. No markdown, no explanation, no extra text.
@@ -45,10 +45,10 @@ User: "what are the prices of the iPhone and MacBook?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}}]}
 
 User: "what are the prices of the products you have?"
-Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}},{"tool":"getProductInformation","args":{"query":"Tesla price"}}]}
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"iPad price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}},{"tool":"getProductInformation","args":{"query":"Tesla price"}},{"tool":"getProductInformation","args":{"query":"Honda price"}}]}
 
 User: "what products do you have and how much do they cost?"
-Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}},{"tool":"getProductInformation","args":{"query":"Tesla price"}}]}
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"iPad price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}},{"tool":"getProductInformation","args":{"query":"Tesla price"}},{"tool":"getProductInformation","args":{"query":"Honda price"}}]}
 
 User: "how much would an iPhone cost in Germany?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}

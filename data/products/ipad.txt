@@ -1,0 +1,16 @@
+iPad Product
+
+iPad Pro:
+Price: $1,299 (Wi-Fi) / $1,499 (Wi-Fi + Cellular)
+Storage: 256GB / 512GB / 1TB / 2TB
+Colors: Silver, Space Black
+Display: 13-inch Ultra Retina XDR OLED tandem display, 120Hz ProMotion
+Processor: M4 chip with 10-core CPU and 10-core GPU
+Camera: 12MP wide rear, 12MP ultrawide, LiDAR Scanner, 12MP ultrawide front with Center Stage
+Features: Face ID, Apple Pencil Pro support, Magic Keyboard support, Thunderbolt 4 USB-C
+Battery: Up to 10 hours
+Connectivity: Wi-Fi 6E, optional 5G, Bluetooth 5.3
+
+AppleCare+ for iPad:
+Price: $99/year
+Coverage: Two incidents of accidental damage, express replacement

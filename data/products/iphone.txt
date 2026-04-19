@@ -1,93 +1,24 @@
-Product: iPhone 15 Pro
-Category: Smartphone
-Brand: Apple
-Price: 3,700 ILS (approximately 1,000 USD / 925 EUR / 790 GBP)
-Release Year: 2023
-Manufactured in: China / India
-Sold in: Worldwide — including Israel, USA, Germany, UK, Brazil, Japan
+iPhone Product
 
-Overview:
-The iPhone 15 Pro is Apple's flagship smartphone. It features a lightweight titanium frame — the first iPhone to use aerospace-grade titanium — and a 6.1-inch Super Retina XDR OLED display with ProMotion 120Hz adaptive refresh rate. It is powered by the A17 Pro chip, built on a 3-nanometer process, delivering industry-leading CPU and GPU performance.
+iPhone 16 Pro Max:
+Price: $1,199
+Storage: 256GB / 512GB / 1TB
+Colors: Black Titanium, White Titanium, Natural Titanium, Desert Titanium
+Display: 6.9-inch Super Retina XDR OLED, ProMotion 120Hz, Always-On Display
+Processor: A18 Pro chip with 6-core CPU and 6-core GPU
+Camera: 48MP Fusion main, 12MP ultrawide, 5x optical zoom telephoto, 4K 120fps video
+Battery: Up to 33 hours video playback, USB-C fast charging
+Features: Face ID, Dynamic Island, Action Button, Camera Control button, MagSafe
+Connectivity: 5G, Wi-Fi 7, Bluetooth 5.3, Ultra Wideband
+OS: iOS 18
 
-Processor and Performance:
-- Apple A17 Pro chip (3nm process)
-- 6-core CPU (2 performance + 4 efficiency cores)
-- 6-core GPU with hardware ray tracing
-- 16-core Neural Engine for on-device AI
+AppleCare+ for iPhone:
+Price: $199/year or $9.99/month
+Coverage: Unlimited accidental damage repairs ($29 screen, $99 other), express replacement service, 24/7 priority support
 
-Camera System:
-- 48MP main camera with second-generation sensor-shift OIS and 24mm focal length
-- 12MP ultrawide camera with autofocus and macro photography
-- 12MP telephoto camera with 3x optical zoom (77mm focal length)
-- Supports 4K ProRes video recording at 60fps
-- Photonic Engine and Smart HDR 5 for computational photography
-
-Key Features:
-- Face ID biometric authentication
-- USB-C connector with USB 3 speeds (replaces Lightning)
-- Apple Pay contactless payments
-- Satellite connectivity for emergency SOS and roadside assistance
-- Action Button (customizable hardware button)
-- iOS 17 with guaranteed updates through at least 2028
-
-Battery and Connectivity:
-- Up to 23 hours video playback
-- MagSafe wireless charging (15W)
-- Qi2 wireless charging compatible
-- 5G connectivity (sub-6GHz and mmWave)
-- Wi-Fi 6E (802.11ax) and Bluetooth 5.3
-- Ultra Wideband chip for precise spatial awareness
-
-Storage Options:
-- 128GB — 3,700 ILS (~1,000 USD)
-- 256GB — 4,250 ILS (~1,150 USD)
-- 512GB — 5,200 ILS (~1,400 USD)
-- 1TB   — 6,100 ILS (~1,650 USD)
-
-Colors Available:
-Black Titanium, White Titanium, Blue Titanium, Natural Titanium
-
-Dimensions and Weight:
-- Height: 146.6 mm | Width: 70.6 mm | Depth: 8.25 mm
-- Weight: 187 grams (lightest Pro ever)
-
-Ecosystem Integration:
-- Seamless sync with Mac, iPad, Apple Watch via iCloud
-- AirDrop, Handoff, Sidecar, and Universal Clipboard
-- Works with Apple Watch for fitness and health tracking
-- Compatible with AirPods for seamless audio switching
-- Find My network for device location
-
-Durability:
-- IP68 water resistance (up to 6 meters for 30 minutes)
-- Ceramic Shield front glass (toughest smartphone glass)
-- Titanium frame — more durable and lighter than stainless steel
-
-Price Comparisons:
-- The iPhone 15 Pro costs approximately 3,700 ILS.
-- The MacBook Pro costs approximately 7,400 ILS — exactly 2x the iPhone price.
-- The Tesla Model 3 costs approximately 370,000 ILS — exactly 100x the iPhone price.
-- You could buy 2 iPhones for the price of 1 MacBook.
-- You could buy 100 iPhones for the price of 1 Tesla Model 3.
-- In euros (EUR), the iPhone costs approximately 925 EUR.
-- In US dollars (USD), the iPhone costs approximately 1,000 USD.
-- In British pounds (GBP), the iPhone costs approximately 790 GBP.
-- In Japanese yen (JPY), the iPhone costs approximately 150,000 JPY.
-- In Brazilian reais (BRL), the iPhone costs approximately 5,000 BRL.
-
-Who Should Buy the iPhone:
-The iPhone is ideal for users who prioritize camera quality, ecosystem integration, security, and long software support (5+ years). It is a premium product positioned at the top of the smartphone market and is especially popular among professionals, creators, and Apple ecosystem users.
-
-Recommended for:
-- Photography enthusiasts (ProRAW, ProRes video)
-- Business professionals (Face ID, Apple Pay, enterprise security)
-- Apple ecosystem users (Mac, iPad, Apple Watch owners)
-- Anyone valuing long-term software updates
-
-Not recommended for:
-- Budget-conscious buyers (consider iPhone SE at 1,800 ILS)
-- Heavy Android customization users
-- Anyone who wants a large screen (consider iPhone 15 Pro Max at 4,500 ILS)
-
-Happiness factor:
-Many customers report high satisfaction with the iPhone 15 Pro. Its premium build, camera system, and ecosystem integration consistently rank it among the most satisfying smartphone purchases globally. Customer satisfaction scores are typically above 90%.
+Accessories:
+MagSafe Charger: $39
+USB-C to MagSafe 3 Cable: $49
+Apple iPhone Case with MagSafe: $49–$59
+AirTag (for Find My): $29 each, 4-pack $99
+Lightning to USB-C Adapter: $29

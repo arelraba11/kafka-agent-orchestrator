@@ -113,9 +113,9 @@ def retrieve(
 
     chunks = []
     for doc, meta, dist in zip(
-        results.get("documents", [[]])[0],
-        results.get("metadatas", [[]])[0],
-        results.get("distances", [[]])[0],
+        (results.get("documents") or [[]])[0],
+        (results.get("metadatas") or [[]])[0],
+        (results.get("distances") or [[]])[0],
     ):
         chunks.append(
             {
