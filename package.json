@@ -16,8 +16,7 @@
   "dependencies": {
     "kafkajs": "^2.2.4",
     "level": "^10.0.0",
-    "openai": "^6.27.0",
-    "uuid": "^13.0.0"
+    "openai": "^6.27.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
