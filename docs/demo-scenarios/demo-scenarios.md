@@ -1,4 +1,6 @@
-Demo Scenarios — Kafka AI Agent (Final Project)
+Demo Scenarios — Kafka AI Agent
+
+Recorded 2026-04-05 with `LLM_PROVIDER=openai` against the earlier 3-product KB; log paths/commands updated.
 
 These scenarios demonstrate the end-to-end event-sourced pipeline with real conversationIds
 and log output from a live test run (2026-04-05).
@@ -11,14 +13,14 @@ Prerequisites
     bun run start
     open http://localhost:3001   # or: bun run web:dev for hot-reload
 
-Log files are in scripts/logs/final-project-services/.
+Log files are in scripts/logs/services/.
 Tail any log while typing in the UI:
 
-    tail -f scripts/logs/final-project-services/router.log
-    tail -f scripts/logs/final-project-services/orchestrator.log
-    tail -f scripts/logs/final-project-services/rag.log
-    tail -f scripts/logs/final-project-services/exchange.log
-    tail -f scripts/logs/final-project-services/answer.log
+    tail -f scripts/logs/services/router.log
+    tail -f scripts/logs/services/orchestrator.log
+    tail -f scripts/logs/services/rag.log
+    tail -f scripts/logs/services/exchange.log
+    tail -f scripts/logs/services/answer.log
 
 -------------------------------------------------------------------------------
 Scenario 1 — Multi-step: Weather + Exchange

@@ -156,7 +156,7 @@ docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh \
 
 The UI receives exactly one answer.
 
-To see the unprotected case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. From reading `orchestrator.ts:157-160`, the duplicate is counted as the next step's result. This has not been exercised by an automated test yet; phase 5 adds integration tests.
+To see the unprotected case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. From reading `orchestrator.ts:157-160`, the duplicate is counted as the next step's result. No automated test covers this yet; phase 5 adds integration tests.
 
 ---
 
