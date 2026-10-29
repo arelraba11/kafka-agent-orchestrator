@@ -5,7 +5,6 @@ import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 import TracePanel from "./TracePanel";
 import type { TraceState } from "./TracePanel";
-import SuggestionChips from "./SuggestionChips";
 
 type Status = "connecting" | "connected" | "disconnected";
 
