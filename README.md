@@ -1,8 +1,6 @@
 # Event-Sourced AI Agent with Kafka
 
-**Advanced Data Engineering — Final Project**
-
-An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state change is an immutable event. No service calls another service directly — all coordination happens through Kafka topics.
+An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Services publish events and commands to Kafka topics and never call each other directly; the only service holding state is the orchestrator (LevelDB). The LLM is called via `callLLM` (Ollama or OpenAI, see `LLM_PROVIDER`).
 
 ---
 
@@ -16,13 +14,13 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state ch
 │    │  types question                                                        │
 │    ▼                                                                        │
 │  webServer.ts                                                               │
-│    │  produces:  UserQueryReceived { conversationId, userInput }            │
+│    │  produces:  UserQueryReceived { payload: { userInput, sessionId } }    │
 │    │  topic:     user-commands                                              │
 │    ▼                                                                        │
 │  routerService.ts                                                           │
 │    │  reads:     UserQueryReceived from user-commands                       │
-│    │  action:    calls OpenAI gpt-4o-mini → generates tool plan             │
-│    │  produces:  PlanGenerated { conversationId, steps[] }                  │
+│    │  action:    callLLM → tool plan (regex planner as fallback)            │
+│    │  produces:  PlanGenerated { sessionId, payload: { steps[] } }          │
 │    │  topic:     conversation-events                                        │
 │    ▼                                                                        │
 │  orchestrator.ts  ◄──── LevelDB (.plan-store/)                              │
@@ -46,31 +44,32 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state ch
 │    │  action:    updates LevelDB state, resolves {{step_N.result}}          │
 │    │             if more steps → dispatch next ToolInvocationRequested      │
 │    │             if all steps done:                                         │
-│    │  produces:  PlanCompleted { conversationId, results[] }                │
+│    │  produces:  PlanCompleted { sessionId, payload: { results[] } }        │
 │    │  topic:     conversation-events                                        │
 │    │             on error:                                                  │
 │    │  produces:  PlanFailed + dead-letter-queue entry                       │
 │    ▼                                                                        │
 │  aggregator.ts                                                              │
 │    │  reads:     PlanCompleted from conversation-events                     │
-│    │  produces:  SynthesizeFinalAnswerRequested { results[] }               │
+│    │  produces:  SynthesizeFinalAnswerRequested { payload: { results[] } }  │
 │    │  topic:     user-commands                                              │
 │    ▼                                                                        │
 │  answerSynthesizer.ts                                                       │
 │    │  reads:     SynthesizeFinalAnswerRequested from user-commands          │
-│    │  action:    calls OpenAI gpt-4o-mini → synthesizes final answer        │
+│    │  action:    callLLM → synthesizes final answer                         │
 │    │  produces:  FinalAnswerSynthesized { answer }                          │
 │    │  topic:     conversation-events                                        │
 │    ▼                                                                        │
 │  webServer.ts  (consumer loop)                                              │
-│    │  reads:     FinalAnswerSynthesized matching conversationId             │
+│    │  reads:     ToolInvocationResulted, FinalAnswerSynthesized, PlanFailed │
+│    │  action:    pushes {tool} / {answer} / {error} over the WebSocket      │
 │    ▼                                                                        │
 │   USER                                                                      │
 │    receives answer                                                          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key rule:** every message is keyed by `conversationId` — guarantees ordering per conversation and enables parallel conversations across 3 partitions.
+**Key rule:** every message is keyed by `conversationId` — guarantees ordering per conversation. Topics have 3 partitions, but each service runs a single instance that handles one message at a time (see Known limitations).
 
 ---
 
@@ -79,9 +78,9 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state ch
 | Topic | Type | Events |
 |---|---|---|
 | `user-commands` | Commands | `UserQueryReceived`, `SynthesizeFinalAnswerRequested` |
-| `conversation-events` | Events (immutable log) | `PlanGenerated`, `ToolInvocationResulted`, `PlanCompleted`, `PlanFailed`, `FinalAnswerSynthesized` |
+| `conversation-events` | Events | `PlanGenerated`, `ToolInvocationResulted`, `PlanCompleted`, `PlanFailed`, `FinalAnswerSynthesized` |
 | `tool-invocation-requests` | Commands | `ToolInvocationRequested` |
-| `dead-letter-queue` | Errors | Unrecoverable failures |
+| `dead-letter-queue` | Errors | Failures from the router and the orchestrator |
 
 4 topics × 3 partitions each.
 
@@ -109,45 +108,65 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Every state ch
 ### Prerequisites
 - Docker + docker-compose
 - Bun 1.0+
-- `OPENAI_API_KEY` in `.env`
+- Python 3.12 (for the RAG worker)
+- `OPENAI_API_KEY` set in `.env`, even if you only use Ollama (see below)
+
+### LLM provider
+
+`callLLM` (`shared/llm/openai.ts`) picks the provider from `LLM_PROVIDER` in `.env`. The default is `auto`.
+
+| `LLM_PROVIDER` | Behavior |
+|---|---|
+| `auto` (default) | Try Ollama (`OLLAMA_HOST`, `OLLAMA_MODEL`, default `llama3.2`) first; fall back to OpenAI `gpt-4o-mini` if Ollama fails |
+| `ollama` | Ollama only |
+| `openai` | OpenAI `gpt-4o-mini` only |
+
+The OpenAI client is constructed when `shared/llm/openai.ts` is imported, and the `openai` library throws if the key is undefined. The router and synthesizer therefore crash at startup without `OPENAI_API_KEY` in **every** mode, including `LLM_PROVIDER=ollama`. A placeholder value is enough if you never call OpenAI. An *invalid* key behaves differently: the router falls back to its regex planner, while the synthesizer fails silently (see Known limitations).
 
 ### One-time setup
 
 ```bash
-cp .env.example .env          # add OPENAI_API_KEY
-docker-compose -f infra/docker-compose.yml up -d
-bash infra/topics-final.sh    # create 4 topics × 3 partitions
+cp .env.example .env          # set OPENAI_API_KEY (and LLM_PROVIDER if you want)
+docker-compose -f infra/docker-compose.yml up -d    # Kafka (and Ollama)
+bash infra/create-topics.sh   # create 4 topics × 3 partitions
 bun install
+cd src/frontend && bun install && cd ../..          # only needed for `bun run web:dev`
 
-# Python RAG (one-time)
+# Python RAG (one-time, Python 3.12)
 cd src/python
-python3 -m venv venv && source venv/bin/activate
+python3.12 -m venv venv && source venv/bin/activate
 pip install -r rag/requirements.txt
-python rag/index_kb.py        # index data/products/ into ChromaDB
+python rag/index_kb.py        # index data/products/ into an embedded Chroma store
 cd ../..
 ```
 
 ### Run
 
 ```bash
-bun run start    # start background services incl. webServer (logs → scripts/logs/final-project-services/)
+bun run start    # start 10 background processes incl. webServer (logs → scripts/logs/services/)
 
 # Open the Web UI at http://localhost:3001
+# The WebSocket endpoint is ws://localhost:3001/ws: send the query as a plain-text frame.
+# The server replies with JSON frames {type:"ack"}, {type:"tool"}, {type:"answer"} or {type:"error"}.
+
 # Or for hot-reload dev mode:
 bun run web:dev    # http://localhost:5173 (proxies /ws → port 3001)
 
 bun run stop     # stop everything
 ```
 
+`bun run start` serves the committed build in `src/frontend/dist/`. After changing frontend code, run `bun run build` in `src/frontend` so `dist/` is current.
+
 ---
 
 ## Architecture Concepts
 
-### Event Sourcing
-`conversation-events` is the only source of truth — an immutable, append-only log. The current state of any conversation is always derivable by replaying its events from offset 0. This gives:
-- **Resilience** — no events are lost on crash; consumer group offset marks where replay resumes
-- **Recoverability** — orchestrator rebuilds plan state on restart by replaying events
-- **Auditability** — every tool call, result, and answer is permanently recorded with `conversationId` + `timestamp`
+### Events in Kafka
+Kafka carries every command and event, keyed by `conversationId`, so you can inspect a conversation's history on the topics. This is not full event sourcing:
+- **No replay** — consumers subscribe with `fromBeginning: false`, and nothing rebuilds state by replaying events. Plan state lives only in LevelDB (`.plan-store/`).
+- **Retention** — compose sets no retention, so Kafka's default of 7 days applies; events are not permanent.
+- **Recovery** — there is no startup scan that resumes plans. After a crash, a service's consumer group re-reads the events it had not committed, and the orchestrator picks up LevelDB state when the next `ToolInvocationResulted` for that conversation arrives.
+- **Auditability** — each event carries `conversationId` and `timestamp`, so a conversation can be traced by key while the topic retains it.
 
 ### Stateful Stream Processing — Orchestrator
 The only stateful service. Uses **LevelDB** (`.plan-store/`) keyed by `conversationId`:
@@ -160,7 +179,7 @@ ToolInvocationResulted → load state → append result → resolve {{step_N.res
   → if error: emit PlanFailed, publish to dead-letter-queue
 ```
 
-LevelDB survives restarts. Kafka consumer group offset replays unprocessed triggers.
+LevelDB survives restarts. Kafka redelivers events whose offsets were not committed.
 
 ### CQRS
 
@@ -178,8 +197,8 @@ Aggregator = CQRS bridge: PlanCompleted (event) → SynthesizeFinalAnswerRequest
 
 Separating commands from events means each service has a single, narrow responsibility: producers never need to know who consumes their output, and consumers never mutate shared state. This makes each microservice independently deployable, testable, and replaceable without breaking the rest of the pipeline.
 
-### Idempotency
-Workers filter by `toolName` — process only their own events. Orchestrator silently drops `ToolInvocationResulted` for unknown `conversationId` (already completed/deleted). Handles Kafka's at-least-once delivery safely. Combined with CQRS, this means any event can be replayed without side effects — a critical property for crash recovery and debugging.
+### Idempotency (partial)
+Workers filter by `toolName` and process only their own requests. The orchestrator drops a `ToolInvocationResulted` whose `conversationId` has no stored plan (already completed or deleted). That is all the protection there is: a duplicate result for a *live* plan is not detected, and workers do not deduplicate. See Known limitations.
 
 ---
 
@@ -187,29 +206,44 @@ Workers filter by `toolName` — process only their own events. Orchestrator sil
 
 | Scenario | Mechanism | Recovery |
 |---|---|---|
-| Worker crash | Kafka retains messages at last committed offset; worker rejoins consumer group on restart | Automatic |
-| Orchestrator crash | LevelDB persists plan state; resumes from `stepIndex` on restart | Automatic |
-| Duplicate events | Workers filter by `toolName`; orchestrator drops unknown `conversationId` | Silent drop |
+| Worker crash | Kafka retains messages at the last committed offset; the worker rejoins its consumer group on restart | Automatic |
+| Orchestrator crash | Kafka redelivers uncommitted events; plan state is read from LevelDB when the next result arrives (no startup scan) | Automatic |
+| Duplicate events | A result for an unknown `conversationId` is dropped. A duplicate while the plan is live is **not** detected: it is appended and advances `stepIndex`, which can skip a step or complete the plan early. A redelivered `PlanGenerated` overwrites state and re-dispatches step 0. | Not handled (fixed in phase 2) |
 | Unrecoverable error | Router + orchestrator publish to `dead-letter-queue` | Manual inspection |
 
 Full reproduction steps: [`docs/resilience-tests/resilience-demo.md`](docs/resilience-tests/resilience-demo.md)
 
 ---
 
+## Known limitations (current behavior)
+
+| Limitation | Fixed in |
+|---|---|
+| Duplicate events are not handled for live plans (see Resilience): can skip a step, complete a plan early, or re-run a tool | Phase 2 |
+| The RAG consumer uses `auto_offset_reset="earliest"` while the TS consumers use `fromBeginning: false`, so a fresh `rag-tool-worker` group replays old requests | Phase 2 |
+| The OpenAI client is built at import, so the router and synthesizer crash at startup without `OPENAI_API_KEY` in every mode | Phase 4 |
+| Synthesizer failures are silent: the user gets no answer and no error | Phase 4 |
+| A router failure goes to the dead-letter queue only; the UI gets no error and keeps waiting | Phase 4 |
+| `bun run stop` runs `pkill -f "bun run"` (`scripts/stop.ts`), which also kills unrelated `bun run` processes on the machine | Phase 4 |
+| Each service handles one message at a time (`consumer.run` sets no `partitionsConsumedConcurrently`, one instance per group), so 3 partitions give no parallelism today | Known design limit |
+| Orchestrator dispatches one step at a time; independent steps are not parallelised | Known design limit |
+| Weather and exchange-rate data are stubbed (11 cities, static rates) | Known design limit |
+| The regex fallback planner has no Honda/iPad product rule (the LLM planner does not depend on it) | Known design limit |
+
+---
+
 ## Benchmark
 
-Measured across 27 live queries (2026-04-05), with session history injection enabled:
+Single local run, 2026-04-05, `LLM_PROVIDER=openai` (gpt-4o-mini), earlier 3-product KB, 27 queries, session history enabled. Latencies come from `[Benchmark]` log deltas; it has not been re-run since.
 
-| Component | Model | Avg latency | Throughput | Accuracy (1–5) | Cost |
-|---|---|---|---|---|---|
-| RouterService | gpt-4o-mini | ~1,113 ms | ~0.9 events/s | 5 — correct plan on all 27 queries | ~$0.001/query |
-| AnswerSynthesizer | gpt-4o-mini | ~2,189 ms | ~0.5 events/s | 5 — coherent, history-aware | ~$0.002/query |
-| RAG Retriever | sentence-transformers (local) | ~65 ms | ~15 events/s | 4 — top-3 semantic search | $0 |
-| Tool workers (math/weather/exchange/chat) | — | ~1 ms | ~1000 events/s | 3–5 | $0 |
-| Orchestrator (state machine) | — | ~1 ms/step | ~1000 events/s | 5 — correct sequencing | $0 |
-| **End-to-end** | | **~3,341 ms** | | **5** | **~$0.003/query** |
+| Component | Avg latency |
+|---|---|
+| RouterService | ~1,113 ms |
+| Tool execution (dispatch to final result, orchestrator view) | ~39 ms overall (simple tools ~14 ms, RAG ~65 ms) |
+| AnswerSynthesizer | ~2,189 ms |
+| **End-to-end** | **~3,341 ms** |
 
-Kafka pipeline overhead (all orchestration + tool workers + Kafka round-trips): **< 50 ms**. LLM inference accounts for **~99% of end-to-end latency**.
+Everything except the two LLM calls accounts for under 50 ms; the LLM calls are ~99% of end-to-end latency.
 
 Full report: [`docs/benchmark.md`](docs/benchmark.md)
 
@@ -217,19 +251,19 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 
 ## Conclusions
 
-**Why Kafka as event store:** Event Sourcing on Kafka provides ordering guarantees, consumer group offset management, and a durable event history in one primitive — impossible to replicate with a mutable DB row. Every action is permanently auditable: replay any `conversationId` from offset 0 to reconstruct exactly what happened, when, and in what order.
+**Why Kafka as the backbone:** Topics keyed by `conversationId` give per-conversation ordering, and consumer group offsets give redelivery after a crash. Events stay on the topics for Kafka's default 7-day retention, so a conversation can be traced by key. There is no replay: state lives in LevelDB.
 
 **Stateful processing:** The Orchestrator accumulates state incrementally from the event stream rather than polling a DB. `{{step_N.result}}` placeholder resolution enables chained tool data flow without any shared memory. The Aggregator is fully stateless — by the time `PlanCompleted` arrives, all results are embedded in its payload.
 
-**CQRS + Idempotency advantages:** Separating commands (`user-commands`, `tool-invocation-requests`) from facts (`conversation-events`) means each service is independently deployable and testable. Idempotent workers (toolName filter + conversationId guard) make the pipeline safe under Kafka's at-least-once delivery — duplicate events are silently dropped, never double-processed.
+**CQRS:** Separating commands (`user-commands`, `tool-invocation-requests`) from facts (`conversation-events`) means each service is independently deployable and testable. Delivery is at-least-once, and duplicate handling is only partial (see Known limitations).
 
 **Trade-offs:**
 
 | Trade-off | Detail |
 |---|---|
-| Eventual consistency | UI polls `conversation-events` — no synchronous request/response |
-| Debugging complexity | A single query produces 8–12 events across 4 topics — correlate by `conversationId` |
-| Operational overhead | 9 processes + Kafka + ChromaDB vs a single REST API |
+| Eventual consistency | The web server consumes `conversation-events` and pushes updates over WebSocket — no synchronous request/response |
+| Debugging complexity | A single-step query produces 7 events (plus 2 per extra step) across 3 topics; the dead-letter queue is used only on failure. Correlate by `conversationId` |
+| Operational overhead | 10 processes + Kafka (+ Ollama optionally) vs a single REST API |
 | Sequential execution | Orchestrator dispatches one step at a time — independent steps are not parallelised |
 
 **Future improvements:** Kafka Streams DSL, Confluent Schema Registry, parallel tool dispatch, Grafana + Prometheus observability, multi-broker cluster.
@@ -243,8 +277,8 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 | Broker | Apache Kafka 3.8.0 (KRaft — no ZooKeeper) |
 | Runtime | Bun 1.0+ (TypeScript) |
 | Frontend | React 19 + Vite + Tailwind CSS v4 |
-| LLM | OpenAI gpt-4o-mini |
-| Vector DB | ChromaDB + sentence-transformers/all-MiniLM-L6-v2 |
+| LLM | Ollama (default `llama3.2`) or OpenAI gpt-4o-mini, via `LLM_PROVIDER` |
+| Vector DB | Embedded ChromaDB (`PersistentClient`) + sentence-transformers/all-MiniLM-L6-v2 |
 | State store | LevelDB (via `level` npm package) |
 | Infrastructure | Docker + docker-compose |
 
@@ -254,12 +288,12 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 
 ```
 ├── infra/
-│   ├── docker-compose.yml             # Kafka (KRaft) + ChromaDB
-│   └── topics-final.sh                # create 4 topics × 3 partitions
+│   ├── docker-compose.yml             # Kafka (KRaft) + Ollama
+│   └── create-topics.sh               # create 4 topics × 3 partitions
 ├── scripts/
-│   ├── start.ts                       # launch 9 background services
+│   ├── start.ts                       # launch 10 background processes
 │   ├── stop.ts
-│   └── logs/final-project-services/   # per-service log files
+│   └── logs/services/                 # per-service log files
 ├── src/
 │   ├── frontend/                      # React 19 + Vite web UI
 │   ├── node/
@@ -270,11 +304,13 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │       └── rag/                       # rag_retriever.py, index_kb.py
 ├── shared/
 │   ├── kafka/client.ts                # KafkaJS wrapper
+│   ├── llm/openai.ts                  # callLLM (Ollama / OpenAI)
 │   ├── schemas/                       # TypeScript event interfaces + JSON Schema files (8 event types)
 │   ├── prompts/                       # LLM prompt functions
-│   ├── state/planStore.ts             # LevelDB plan persistence
+│   ├── state/                         # planStore.ts (LevelDB plans), historyStore.ts (history.json)
 │   └── topics.ts                      # topic name constants
-└── data/products/                     # iphone.txt, macbook.txt, tesla.txt (RAG knowledge base)
+├── history.json                       # per-session chat history (runtime file, gitignored)
+└── data/products/                     # honda, ipad, iphone, macbook, tesla .txt (RAG knowledge base)
 ```
 
 ---
@@ -284,7 +320,7 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 | Document | Content |
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | Detailed architecture + event schemas |
-| [`docs/benchmark.md`](docs/benchmark.md) | Latency measurements across 25 queries |
-| [`docs/execution-log.txt`](docs/execution-log.txt) | Full execution log — 14 scenarios |
+| [`docs/benchmark.md`](docs/benchmark.md) | Latency measurements from a single 27-query run |
 | [`docs/demo-scenarios/demo-scenarios.md`](docs/demo-scenarios/demo-scenarios.md) | Step-by-step demo with real log output |
+| [`docs/test-run-2026-04-11.md`](docs/test-run-2026-04-11.md) | Recorded test run |
 | [`docs/resilience-tests/resilience-demo.md`](docs/resilience-tests/resilience-demo.md) | Crash + recovery reproduction steps |
