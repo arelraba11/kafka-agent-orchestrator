@@ -211,7 +211,7 @@ Workers filter by `toolName` and process only their own requests. The orchestrat
 | Duplicate events | A result for an unknown `conversationId` is dropped. A duplicate while the plan is live is **not** detected: it is appended and advances `stepIndex`, which can skip a step or complete the plan early. A redelivered `PlanGenerated` overwrites state and re-dispatches step 0. | Not handled (fixed in phase 2) |
 | Unrecoverable error | Router + orchestrator publish to `dead-letter-queue` | Manual inspection |
 
-Full reproduction steps: [`docs/resilience-tests/resilience-demo.md`](docs/resilience-tests/resilience-demo.md)
+Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
 
 ---
 
@@ -323,4 +323,4 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 | [`docs/benchmark.md`](docs/benchmark.md) | Latency measurements from a single 27-query run |
 | [`docs/demo-scenarios/demo-scenarios.md`](docs/demo-scenarios/demo-scenarios.md) | Step-by-step demo with real log output |
 | [`docs/test-run-2026-04-11.md`](docs/test-run-2026-04-11.md) | Recorded test run |
-| [`docs/resilience-tests/resilience-demo.md`](docs/resilience-tests/resilience-demo.md) | Crash + recovery reproduction steps |
+| [`docs/resilience-demo.md`](docs/resilience-demo.md) | Crash + recovery reproduction steps |
