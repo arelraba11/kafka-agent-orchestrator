@@ -1,16 +1,18 @@
 # Benchmark Report
 
+> **Historical run.** Single local run on 2026-04-05 with `LLM_PROVIDER=openai` (gpt-4o-mini), not repeated since. Latencies are deltas computed from event `timestamp` fields and printed as `[Benchmark]` log lines (`grep "\[Benchmark\]" scripts/logs/services/*.log`). The knowledge base then held 3 products (iPhone, MacBook, Tesla). It now holds 5 products (Honda, iPad, iPhone, MacBook, Tesla), and `index_kb.py` produces 21 chunks, so retrieval numbers are not comparable with today's index. No accuracy, throughput or cost figures were measured.
+
 ## Setup
 
 Local Docker environment: single Kafka broker (KRaft), all services running as background processes via `bun run start`.  
-ChromaDB collection: 53 chunks (iPhone, MacBook, Tesla — expanded knowledge base).  
+ChromaDB collection: iPhone, MacBook, Tesla (3 products).  
 LLM: OpenAI gpt-4o-mini (router + synthesizer).  
 RAG: sentence-transformers/all-MiniLM-L6-v2 (local embedding).  
 Session history: enabled — prior conversation turns injected into router and synthesizer prompts.
 
 Pipeline: `WebServer (WebSocket) → RouterService → Orchestrator → Workers → AnswerSynthesizer → WebServer`
 
-Latency measured via `timestamp` fields embedded in event payloads across **27 queries** (all 28 test scenarios, 0 failures).
+Latency measured via `timestamp` fields embedded in event payloads across **27 queries**.
 
 ---
 
@@ -87,29 +89,13 @@ LLM inference accounts for **~99% of end-to-end latency**.
 
 ---
 
-## Model Comparison Table
-
-| Component | Model | Avg time/event | Throughput (events/s) | Accuracy (1–5) | Cost |
-|---|---|---|---|---|---|
-| **RouterService** | gpt-4o-mini | ~1,113 ms | ~0.9 | 5 — correct plan on all 27 queries | ~$0.001/query |
-| **AnswerSynthesizer** | gpt-4o-mini | ~2,189 ms | ~0.5 | 5 — coherent, grounded, history-aware | ~$0.002/query |
-| **RAG Retriever** | sentence-transformers (local) | ~65 ms | ~15 | 4 — semantic search, top-3 chunks | $0 |
-| **weatherApp** (tool worker) | — (mock data) | ~1 ms | ~1000 | 3 — mock, 10 cities | $0 |
-| **exchangeApp** (tool worker) | — (static rates) | ~1 ms | ~1000 | 3 — static ILS-based rates | $0 |
-| **mathApp** (tool worker) | — (recursive descent parser) | ~1 ms | ~1000 | 5 — exact arithmetic | $0 |
-| **generalChatApp** (tool worker) | — (rule-based) | ~1 ms | ~1000 | 3 — pattern matching | $0 |
-| **Orchestrator** (state machine) | — | ~1 ms/step | ~1000 | 5 — correct step sequencing, LevelDB state | $0 |
-| **Aggregator** (CQRS bridge) | — | ~1 ms | ~1000 | 5 — pass-through | $0 |
-
----
-
 ## Consumer Lag
 
 Consumer lag measures how far behind each consumer group is from the latest offset — a lag of 0 means all messages have been processed.
 
 **How to measure:**
 ```bash
-docker exec kafka kafka-consumer-groups.sh \
+docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
   --bootstrap-server localhost:9092 \
   --describe --all-groups
 ```
@@ -129,7 +115,7 @@ docker exec kafka kafka-consumer-groups.sh \
 | `rag-tool-worker` | `tool-invocation-requests` | 0 | ✅ fully caught up |
 | `ui-web-final-answer` | `conversation-events` | 0 | ✅ fully caught up |
 
-**Interpretation:** Lag stays at 0 during normal operation because workers process events faster than they arrive (tool workers < 5 ms per event, LLM calls are the only slowdown and are serialized per conversation). During a worker crash, lag builds on `tool-invocation-requests` for the affected group and drains automatically on restart — this is the mechanism demonstrated in Resilience Scenario 1.
+**Interpretation:** Lag stays at 0 during normal operation because workers process events faster than they arrive (LLM calls are the main slowdown). During a worker crash, lag builds on `tool-invocation-requests` for the affected group and drains automatically on restart — this is the mechanism demonstrated in Resilience Scenario 1.
 
 ---
 
@@ -142,5 +128,5 @@ The Kafka pipeline — routing, orchestration, and all tool workers — adds **u
 **Key findings:**
 - Kafka is not the bottleneck — Kafka overhead is < 50 ms regardless of plan complexity.
 - Switching to a faster LLM or enabling streaming output would have far more impact than any Kafka tuning.
-- RAG retrieval (ChromaDB) scales well: 53 chunks → top-3 retrieval at ~65 ms average. Retrieval scores: 0.69–0.73.
-- Session history correctly resolved ambiguous follow-ups in 100% of test cases (pronoun "it" → iPhone, "the MacBook" → MacBook, name recall across turns).
+- RAG retrieval (ChromaDB) took ~65 ms on average on the 3-product KB (recorded retrieval scores: 0.69–0.73).
+- Session history is injected into both prompts; follow-up resolution was not scored in this run (see `test-run-2026-04-11.md` for a recorded run that includes two follow-up rows marked ⚠️).
