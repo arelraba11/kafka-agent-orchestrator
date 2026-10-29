@@ -1,5 +1,5 @@
 /**
- * stop.ts — Stop all Final Project services
+ * stop.ts — Stop all services
  * Usage: bun run stop
  */
 

@@ -1,5 +1,5 @@
 /**
- * start.ts — Launch all Final Project services
+ * start.ts — Launch all services
  * Usage: bun run start
  */
 
@@ -8,7 +8,7 @@ import { join } from "path";
 import { mkdirSync, openSync, closeSync } from "fs";
 
 const ROOT    = join(import.meta.dir, "..");
-const LOG_DIR = join(ROOT, "scripts/logs/final-project-services");
+const LOG_DIR = join(ROOT, "scripts/logs/services");
 
 // ─── Kafka readiness ──────────────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ async function waitForKafka(maxWaitSec = 60): Promise<void> {
 
 async function ensureTopics(): Promise<void> {
   console.log("Creating/verifying topics...");
-  const proc = Bun.spawn(["bash", "infra/topics-final.sh"], {
+  const proc = Bun.spawn(["bash", "infra/create-topics.sh"], {
     cwd: ROOT,
     stdout: "ignore",
     stderr: "ignore",
@@ -102,8 +102,8 @@ startService("rag_retriever",     [
 ], "rag.log");
 
 console.log(`
-FINAL PROJECT SERVICES STARTED
-Logs in scripts/logs/final-project-services/
+SERVICES STARTED
+Logs in scripts/logs/services/
 
 Web server: http://localhost:3001  (log: webserver.log)
 

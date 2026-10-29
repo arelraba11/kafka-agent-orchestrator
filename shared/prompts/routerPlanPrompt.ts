@@ -1,5 +1,5 @@
 // ─── Router Plan Prompt ───────────────────────────────────────────────────────
-// Used by: routerService (Final Project)
+// Used by: routerService
 // Technique: Few-shot prompting
 // Purpose:   Ask the LLM to produce a JSON plan of tool steps for a user query.
 

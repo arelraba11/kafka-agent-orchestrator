@@ -1,8 +1,7 @@
 // ─── Final Answer Synthesis Prompt ───────────────────────────────────────────
-// Used by: answerSynthesizer (Final Project)
+// Used by: answerSynthesizer
 // Technique: Structured summarisation
 // Purpose:   Combine all tool results into a single coherent reply for the user.
-// Note:      This is the ORCHESTRATION_SYNTHESIS_PROMPT referenced in the course requirements.
 
 export interface HistoryMessage {
   role: "user" | "assistant";

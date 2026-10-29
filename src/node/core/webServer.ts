@@ -37,7 +37,7 @@ await subscribeAndRun(
     };
 
     const ws = pending.get(event.conversationId);
-    if (!ws) return; // belongs to terminal UI or another client
+    if (!ws) return; // belongs to another client
 
     if (event.eventType === "ToolInvocationResulted") {
       ws.send(JSON.stringify({ type: "tool", toolName: event.payload.toolName }));
@@ -77,7 +77,7 @@ Bun.serve({
     const file = Bun.file(filePath);
     if (await file.exists()) return new Response(file);
 
-    // SPA fallback — let React Router handle unknown paths
+    // SPA fallback — serve index.html for unknown paths
     return new Response(Bun.file(join(DIST_DIR, "index.html")), {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
