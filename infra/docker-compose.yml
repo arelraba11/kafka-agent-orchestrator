@@ -21,7 +21,7 @@ services:
 
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-  # ── Exercise 4 sanitizer (llama3) ────────────────────────────────────────────
+  # ── Optional local LLM (LLM_PROVIDER=auto|ollama) ────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -30,15 +30,5 @@ services:
     volumes:
       - ollama-data:/root/.ollama
 
-  # ── Final Project RAG retrieval ───────────────────────────────────────────────
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: chromadb
-    ports:
-      - "8000:8000"
-    volumes:
-      - chroma-data:/chroma/chroma
-
 volumes:
   ollama-data:
-  chroma-data:
