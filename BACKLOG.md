@@ -16,8 +16,8 @@ Issues found while verifying a fresh clone (2026-10-28). Not committed.
 
 ## README corrections
 
-- **Chunk count:** `docs/benchmark.md` reports a 53-chunk index. `index_kb.py` produces 21 chunks from the current `data/products/`. Either update the benchmark or the README.
-- **Product file list:** the README file tree lists `iphone.txt`, `macbook.txt` and `tesla.txt`. `data/products/` also contains `honda.txt` and `ipad.txt`.
+- **Chunk count:** `docs/benchmark.md` reports a 53-chunk index. `index_kb.py` produces 56 chunks from the current `data/products/` (11 files). Either update the benchmark or the README.
+- **Product file list:** the README file tree lists `iphone.txt`, `macbook.txt` and `tesla.txt`. `data/products/` also contains `honda.txt` and `ipad.txt`. (Fixed: the README tree now says 11 files, one per product.)
 - **Frontend install:** `bun run web:dev` needs `cd src/frontend && bun install`. The README only shows the root `bun install`. (`bun run start` works without it, because `src/frontend/dist/` is committed.)
 - **WebSocket path:** the endpoint is `ws://localhost:3001/ws`. This is not documented. The server rejects upgrades on `/`.
 - **OpenAI key requirement:** with the default `LLM_PROVIDER=openai`, `.env` needs a valid `OPENAI_API_KEY`. An invalid key fails silently (see bug 1). Also state the Python 3.12 requirement, which currently appears only in `CLAUDE.md`.

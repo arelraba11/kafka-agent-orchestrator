@@ -142,6 +142,8 @@ python rag/index_kb.py        # index data/products/ into an embedded Chroma sto
 cd ../..
 ```
 
+The knowledge base in `data/products/` is sample data: 11 products (56 chunks), one `.txt` file per product or product family, all prices in USD. The newer files (Galaxy S25 / S25 Ultra, Sony WH-1000XM5, PlayStation 5 Pro, Nintendo Switch 2, Toyota Camry) use launch prices (US MSRP at launch, not today's price). The five older files (iPhone, iPad, MacBook, Tesla, Honda) keep their original headline prices, which are illustrative: for example the MacBook Pro 16-inch line says "Starting at $2,000", which is not Apple's launch price. After editing a file, re-run `index_kb.py`.
+
 ### Run
 
 ```bash
@@ -242,7 +244,8 @@ Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
 | Each service handles one message at a time (`consumer.run` sets no `partitionsConsumedConcurrently`, one instance per group), so 3 partitions give no parallelism today | Known design limit |
 | Orchestrator dispatches one step at a time; independent steps are not parallelised | Known design limit |
 | Weather and exchange-rate data are stubbed (11 cities, static rates) | Known design limit |
-| The regex fallback planner has no Honda/iPad product rule (the LLM planner does not depend on it) | Known design limit |
+| The regex fallback planner (`PRODUCT_REGEX`) only knows iphone, macbook, tesla, model 3/s/x/y, cybertruck and generic words (product, laptop, phone, ...). It has no rule for iPad, Honda or the newer products (Galaxy S25, Sony WH-1000XM5, PlayStation 5 Pro, Nintendo Switch 2, Toyota Camry); the LLM planner lists them in its prompt and does not depend on the regex | Known design limit |
+| Retrieval is plain similarity search over chunks, with no product filter, so an ambiguous query can rank the wrong product first and return its price. On the live index, `Galaxy S25 price` ranks `galaxy_s25_ultra` first (value `1299.99`), while `Galaxy S25 Ultra price` ranks it first correctly. The price rule then reads the price of whichever source ranks first | Known design limit |
 
 ---
 
@@ -325,7 +328,7 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │   ├── state/                         # planStore.ts (LevelDB plans), historyStore.ts (history.json)
 │   └── topics.ts                      # topic name constants
 ├── history.json                       # per-session chat history (runtime file, gitignored)
-└── data/products/                     # honda, ipad, iphone, macbook, tesla .txt (RAG knowledge base)
+└── data/products/                     # 11 .txt files, one per product (RAG knowledge base, sample data)
 ```
 
 ---
