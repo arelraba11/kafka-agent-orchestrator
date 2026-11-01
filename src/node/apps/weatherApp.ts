@@ -1,12 +1,11 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 
 // ─── Mock weather data ────────────────────────────────────────────────────────
@@ -47,11 +46,14 @@ const consumer = await createConsumer("weather-tool-worker");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.TOOL_INVOCATION_REQUESTS],
-  async (_topic, _key, value) => {
-    const req = value as ToolInvocationRequested;
+  groupId: "weather-tool-worker",
+  service: "weather",
+  producer,
+  topic: TOPICS.TOOL_INVOCATION_REQUESTS,
+  types: ["ToolInvocationRequested"],
+  handler: async (req) => {
     if (req.payload.toolName !== "weather") return;
 
     const { conversationId } = req;
@@ -59,42 +61,30 @@ await subscribeAndRun(
 
     console.log(`[weather] conversationId=${conversationId} city="${city}"`);
 
+    // Compute the result inside the try; publish outside it. A failed send must
+    // propagate as ProducerError (redelivery), not turn into an error result.
+    let result: Record<string, unknown>;
     try {
       const data = getMockWeather(city);
       const resultStr = formatResult(city, data);
 
       console.log(`[weather] result="${resultStr}"`);
-
-      const event: ToolInvocationResulted = {
-        conversationId,
-        timestamp: Date.now(),
-        eventType: "ToolInvocationResulted",
-        payload: {
-          toolName: "weather",
-          stepIndex: req.payload.stepIndex,
-          result: { value: resultStr, city, temp: data.temp, condition: data.condition, success: true },
-        },
-      };
-
-      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+      result = { value: resultStr, city, temp: data.temp, condition: data.condition, success: true };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[weather] error="${errorMsg}"`);
-
-      const event: ToolInvocationResulted = {
-        conversationId,
-        timestamp: Date.now(),
-        eventType: "ToolInvocationResulted",
-        payload: {
-          toolName: "weather",
-          stepIndex: req.payload.stepIndex,
-          result: { value: "", success: false, error: errorMsg },
-        },
-      };
-
-      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+      result = { value: "", success: false, error: errorMsg };
     }
-  }
-);
+
+    const event: ToolInvocationResulted = {
+      conversationId,
+      timestamp: Date.now(),
+      eventType: "ToolInvocationResulted",
+      payload: { toolName: "weather", stepIndex: req.payload.stepIndex, result },
+    };
+
+    await publish(producer, TOPICS.CONVERSATION_EVENTS, event);
+  },
+});
 
 console.log("[weather] WeatherApp started.");

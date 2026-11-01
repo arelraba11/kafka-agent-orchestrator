@@ -1,11 +1,13 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
+  validateOutbound,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
-import { TOPICS } from "../../../shared/topics";
+import { nonRetryable } from "../../../shared/kafka/errors";
+import { TOPICS, type TopicName } from "../../../shared/topics";
 import { initializeStore, getPlan, savePlan } from "../../../shared/state/planStore";
 import { transition, type OrchestratorInput } from "./planTransition";
 
@@ -23,7 +25,9 @@ async function handle(
   const { conversationId } = event;
 
   const state = await getPlan(conversationId); // throws on I/O error → redelivery
-  const { state: next, emit, decision } = transition(state, event, Date.now());
+  // transition() is pure: anything it throws is a bug in this message's handling,
+  // not an infrastructure failure, so it is dead-lettered rather than retried.
+  const { state: next, emit, decision } = nonRetryable(() => transition(state, event, Date.now()));
 
   if (decision.kind === "ignored") {
     const log = decision.reason === "future-step" ? console.error : console.log;
@@ -33,15 +37,22 @@ async function handle(
     return; // no write, no emit
   }
 
-  // 1. emit (acks=-1; a failed send throws → kafkajs redelivers, nothing persisted yet)
+  // 1. validate every outbound message BEFORE the first send, so a contract bug can
+  //    never leave a half-emitted set (throws OutboundContractViolationError → DLQ)
   for (const m of emit) {
-    await sendMessage(producer, m.topic, m.key, m.value);
+    validateOutbound<TopicName>(m.topic, m.message);
   }
 
-  // 2. persist (sync, throws)
+  // 2. emit (acks=-1; a failed send throws ProducerError → kafkajs redelivers,
+  //    nothing persisted yet)
+  for (const m of emit) {
+    await publish<TopicName>(producer, m.topic, m.message);
+  }
+
+  // 3. persist (sync; throws StoreError)
   await savePlan(conversationId, next!);
 
-  // 3. return → kafkajs resolves the offset; it is committed at the end of the batch
+  // 4. return → kafkajs resolves the offset; it is committed at the end of the batch
   switch (decision.kind) {
     case "started":
       console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${next!.plan.map(s => s.tool).join(", ")}]`);
@@ -75,21 +86,14 @@ const consumer = await createConsumer("orchestrator-service");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.CONVERSATION_EVENTS],
-  async (_topic, _key, value) => {
-    const event = value as { eventType: string };
-
-    switch (event.eventType) {
-      case "PlanGenerated":
-      case "ToolInvocationResulted":
-        await handle(producer, event as OrchestratorInput);
-        break;
-      default:
-        break;
-    }
-  }
-);
+  groupId: "orchestrator-service",
+  service: "orchestrator",
+  producer,
+  topic: TOPICS.CONVERSATION_EVENTS,
+  types: ["PlanGenerated", "ToolInvocationResulted"],
+  handler: (event) => handle(producer, event),
+});
 
 console.log("[orchestrator] OrchestratorService started.");

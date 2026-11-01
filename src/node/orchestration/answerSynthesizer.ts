@@ -1,24 +1,22 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { callLLM } from "../../../shared/llm/openai";
 import { synthesisPrompt } from "../../../shared/prompts/synthesisPrompt";
-import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
-import type { SynthesizeFinalAnswerRequested } from "../../../shared/schemas/SynthesizeFinalAnswerRequested";
 import { getHistory, appendToHistory } from "../../../shared/state/historyStore";
 
 // ─── User query cache ─────────────────────────────────────────────────────────
 // user-commands carries both UserQueryReceived and SynthesizeFinalAnswerRequested.
-// We cache userInput + sessionId by conversationId so the synthesizer can include
-// the original question in the LLM prompt and write history after answering.
+// We cache userInput by conversationId so the synthesizer can include the original
+// question in the LLM prompt. sessionId comes from the command itself.
 
-const userQueryCache = new Map<string, { userInput: string; sessionId: string }>();
+const userQueryCache = new Map<string, { userInput: string }>();
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -27,44 +25,35 @@ const consumer = await createConsumer("answer-synthesizer");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.USER_COMMANDS],
-  async (_topic, _key, value) => {
-    const event = value as { commandType?: string; eventType?: string };
-
+  groupId: "answer-synthesizer",
+  service: "synthesizer",
+  producer,
+  topic: TOPICS.USER_COMMANDS,
+  types: ["UserQueryReceived", "SynthesizeFinalAnswerRequested"],
+  handler: async (event) => {
     // Cache user queries as they arrive on user-commands
-    if (event.eventType === "UserQueryReceived") {
-      const q = event as UserQueryReceived;
-      userQueryCache.set(q.conversationId, {
-        userInput: q.payload.userInput,
-        sessionId: q.payload.sessionId,
-      });
+    if ("eventType" in event) {
+      userQueryCache.set(event.conversationId, { userInput: event.payload.userInput });
       return;
     }
 
-    if (event.commandType !== "SynthesizeFinalAnswerRequested") return;
-
-    const command = event as SynthesizeFinalAnswerRequested;
-    const { conversationId, sessionId, timestamp: planCompletedAt, payload } = command;
+    const { conversationId, sessionId, timestamp: planCompletedAt, payload } = event;
 
     console.log(`[synthesizer] conversationId=${conversationId} results=${payload.results.length}`);
 
     const cached = userQueryCache.get(conversationId);
     const userQuery = cached?.userInput ?? "";
-    const resolvedSessionId = sessionId ?? cached?.sessionId ?? "";
     userQueryCache.delete(conversationId);
 
-    const history = await getHistory(resolvedSessionId);
+    const history = await getHistory(sessionId);
 
-    const toolResults = payload.results.map((r) => {
-      const item = r as { toolName: string; result: Record<string, unknown> };
-      return {
-        tool: item.toolName,
-        // RAG results carry retrieved text in `context`; other tools use `value`
-        result: String(item.result.value ?? item.result.context ?? JSON.stringify(item.result)),
-      };
-    });
+    const toolResults = payload.results.map((item) => ({
+      tool: item.toolName,
+      // RAG results carry retrieved text in `context`; other tools use `value`
+      result: String(item.result.value ?? item.result.context ?? JSON.stringify(item.result)),
+    }));
 
     const answer = await callLLM(synthesisPrompt(userQuery, toolResults, history));
 
@@ -75,16 +64,16 @@ await subscribeAndRun(
       payload: { answer },
     };
 
-    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, finalEvent);
+    await publish(producer, TOPICS.CONVERSATION_EVENTS, finalEvent);
 
-    if (resolvedSessionId) {
-      await appendToHistory(resolvedSessionId, userQuery, answer);
+    if (sessionId) {
+      await appendToHistory(sessionId, userQuery, answer);
     }
 
     const synthesizerLatency = Date.now() - planCompletedAt;
     console.log(`[synthesizer] conversationId=${conversationId} answer="${answer}"`);
     console.log(`[Benchmark] conversationId=${conversationId} synthesizerLatency=${synthesizerLatency}ms`);
-  }
-);
+  },
+});
 
 console.log("[synthesizer] AnswerSynthesizer started.");

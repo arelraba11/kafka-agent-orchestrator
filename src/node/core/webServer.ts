@@ -1,7 +1,7 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
@@ -27,40 +27,38 @@ registerShutdown([producer, consumer]);
 
 // Start consumer BEFORE Bun.serve — eliminates race window where a fast pipeline
 // could emit FinalAnswerSynthesized before the pending map entry exists.
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.CONVERSATION_EVENTS],
-  async (_topic, _key, value) => {
-    const event = value as {
-      eventType: string;
-      conversationId: string;
-      payload: Record<string, unknown>;
-    };
-
+  groupId: CONSUMER_GROUP,
+  service: "web",
+  producer,
+  topic: TOPICS.CONVERSATION_EVENTS,
+  types: ["ToolInvocationResulted", "FinalAnswerSynthesized", "PlanFailed"],
+  handler: async (event) => {
     const ws = pending.get(event.conversationId);
     if (!ws) return; // belongs to another client
 
-    if (event.eventType === "ToolInvocationResulted") {
-      ws.send(JSON.stringify({ type: "tool", toolName: event.payload.toolName }));
+    switch (event.eventType) {
+      case "ToolInvocationResulted":
+        ws.send(JSON.stringify({ type: "tool", toolName: event.payload.toolName }));
+        break;
+      case "FinalAnswerSynthesized":
+        pending.delete(event.conversationId);
+        ws.send(JSON.stringify({ type: "answer", answer: event.payload.answer }));
+        break;
+      case "PlanFailed":
+        pending.delete(event.conversationId);
+        ws.send(
+          JSON.stringify({
+            type: "error",
+            reason: event.payload.reason,
+            failedTool: event.payload.failedTool,
+          })
+        );
+        break;
     }
-
-    if (event.eventType === "FinalAnswerSynthesized") {
-      pending.delete(event.conversationId);
-      ws.send(JSON.stringify({ type: "answer", answer: event.payload.answer }));
-    }
-
-    if (event.eventType === "PlanFailed") {
-      pending.delete(event.conversationId);
-      ws.send(
-        JSON.stringify({
-          type: "error",
-          reason: event.payload.reason,
-          failedTool: event.payload.failedTool,
-        })
-      );
-    }
-  }
-);
+  },
+});
 
 Bun.serve({
   port: PORT,
@@ -108,7 +106,17 @@ Bun.serve({
         eventType: "UserQueryReceived",
         payload: { userInput, sessionId },
       };
-      await sendMessage(producer, TOPICS.USER_COMMANDS, conversationId, queryEvent);
+      // Not inside a consumer handler: there is no input message to dead-letter. A
+      // contract violation (or any send failure) is logged and the frame dropped.
+      try {
+        await publish(producer, TOPICS.USER_COMMANDS, queryEvent);
+      } catch (err) {
+        pending.delete(conversationId);
+        console.error(
+          `[webserver] conversationId=${conversationId} dropped frame: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`
+        );
+        return;
+      }
 
       ws.send(JSON.stringify({ type: "ack", conversationId }));
       console.log(`[webserver] conversationId=${conversationId} sessionId=${sessionId} query="${userInput}"`);

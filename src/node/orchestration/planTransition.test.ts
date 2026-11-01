@@ -58,8 +58,7 @@ describe("normal progression", () => {
     });
     expect(started.emit).toHaveLength(1);
     expect(started.emit[0].topic).toBe(TOPICS.TOOL_INVOCATION_REQUESTS);
-    expect(started.emit[0].key).toBe(ID);
-    expect(started.emit[0].value).toMatchObject({
+    expect(started.emit[0].message).toMatchObject({
       conversationId: ID,
       eventType: "ToolInvocationRequested",
       payload: { toolName: "weather", stepIndex: 0, input: { city: "Tel Aviv" } },
@@ -75,7 +74,7 @@ describe("normal progression", () => {
     expect(advanced.state!.status).toBe("running");
     expect(advanced.emit).toHaveLength(1);
     expect(advanced.emit[0].topic).toBe(TOPICS.TOOL_INVOCATION_REQUESTS);
-    expect(advanced.emit[0].value).toMatchObject({
+    expect(advanced.emit[0].message).toMatchObject({
       eventType: "ToolInvocationRequested",
       payload: { toolName: "math", stepIndex: 1, input: { expression: "1+1" } },
     });
@@ -90,13 +89,12 @@ describe("normal progression", () => {
     expect(done.state!.stepIndex).toBe(2);
     expect(done.emit).toHaveLength(1);
     expect(done.emit[0].topic).toBe(TOPICS.CONVERSATION_EVENTS);
-    expect(done.emit[0].key).toBe(ID);
-    expect(done.emit[0].value).toMatchObject({
+    expect(done.emit[0].message).toMatchObject({
       conversationId: ID,
       sessionId: SESSION,
       eventType: "PlanCompleted",
     });
-    const results = (done.emit[0].value as { payload: { results: unknown[] } }).payload.results;
+    const results = (done.emit[0].message as { payload: { results: unknown[] } }).payload.results;
     expect(results).toEqual([
       { toolName: "weather", result: { value: "sunny", success: true } },
       { toolName: "math", result: { value: "2", success: true } },
@@ -225,8 +223,7 @@ describe("failed step", () => {
 
     const [failed] = r.emit;
     expect(failed.topic).toBe(TOPICS.CONVERSATION_EVENTS);
-    expect(failed.key).toBe(ID);
-    expect(failed.value).toEqual({
+    expect(failed.message).toEqual({
       conversationId: ID,
       timestamp: NOW,
       eventType: "PlanFailed",
@@ -250,7 +247,7 @@ describe("empty plan", () => {
     expect(r.state).toMatchObject({ status: "failed", plan: [], stepIndex: 0, results: [] });
     expect(r.emit).toHaveLength(1);
     expect(r.emit[0].topic).toBe(TOPICS.CONVERSATION_EVENTS);
-    expect(r.emit[0].value).toMatchObject({
+    expect(r.emit[0].message).toMatchObject({
       eventType: "PlanFailed",
       payload: { reason: "plan has no steps", failedTool: "none", completedResults: [] },
     });
@@ -270,7 +267,7 @@ describe("{{step_N.result}} placeholders", () => {
       NOW
     );
     expect(r.decision.kind).toBe("advanced");
-    expect(r.emit[0].value).toMatchObject({
+    expect(r.emit[0].message).toMatchObject({
       payload: { toolName: "exchange", stepIndex: 1, input: { amount: "3700 ILS" } },
     });
   });

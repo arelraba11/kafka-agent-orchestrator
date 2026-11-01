@@ -6,17 +6,15 @@ import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvoca
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
 import type { PlanFailed } from "../../../shared/schemas/PlanFailed";
+import type { TopicMessage } from "../../../shared/schemas/index";
 
 // Pure plan state machine: no Kafka, no LevelDB. The orchestrator shell loads the
 // state, calls transition(), emits the result's messages, then persists the new state.
 
 export type OrchestratorInput = PlanGenerated | ToolInvocationResulted;
 
-export interface OutboundMessage {
-  topic: TopicName;
-  key: string;
-  value: unknown;
-}
+/** A message to publish; the Kafka key is derived from it by publish(). */
+export type OutboundMessage = { [T in TopicName]: { topic: T; message: TopicMessage<T> } }[TopicName];
 
 export type IgnoreReason =
   | "unknown-plan"
@@ -93,7 +91,7 @@ function requestMessage(
       input: resolvePlaceholders(step.args, results),
     },
   };
-  return { topic: TOPICS.TOOL_INVOCATION_REQUESTS, key: conversationId, value };
+  return { topic: TOPICS.TOOL_INVOCATION_REQUESTS, message: value };
 }
 
 function failureMessages(
@@ -110,7 +108,7 @@ function failureMessages(
     payload: { reason, failedTool, completedResults },
   };
   // A failed plan is a domain event; the dead-letter queue holds poison messages only.
-  return [{ topic: TOPICS.CONVERSATION_EVENTS, key: conversationId, value: planFailed }];
+  return [{ topic: TOPICS.CONVERSATION_EVENTS, message: planFailed }];
 }
 
 function onPlanGenerated(
@@ -219,7 +217,7 @@ function onToolInvocationResulted(
   };
   return {
     state: { ...state, results, stepIndex: nextIndex, status: "completed" },
-    emit: [{ topic: TOPICS.CONVERSATION_EVENTS, key: conversationId, value: planCompleted }],
+    emit: [{ topic: TOPICS.CONVERSATION_EVENTS, message: planCompleted }],
     decision: { kind: "completed" },
   };
 }

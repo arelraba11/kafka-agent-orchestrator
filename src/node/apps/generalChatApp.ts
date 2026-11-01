@@ -1,12 +1,11 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 
 // ─── Rule-based response engine ───────────────────────────────────────────────
@@ -86,11 +85,14 @@ const consumer = await createConsumer("chat-tool-worker");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.TOOL_INVOCATION_REQUESTS],
-  async (_topic, _key, value) => {
-    const req = value as ToolInvocationRequested;
+  groupId: "chat-tool-worker",
+  service: "chat",
+  producer,
+  topic: TOPICS.TOOL_INVOCATION_REQUESTS,
+  types: ["ToolInvocationRequested"],
+  handler: async (req) => {
     if (req.payload.toolName !== "chat") return;
 
     const { conversationId } = req;
@@ -98,41 +100,29 @@ await subscribeAndRun(
 
     console.log(`[chat] conversationId=${conversationId} input="${userInput}"`);
 
+    // Compute the result inside the try; publish outside it. A failed send must
+    // propagate as ProducerError (redelivery), not turn into an error result.
+    let result: Record<string, unknown>;
     try {
       const resultStr = generateResponse(userInput);
 
       console.log(`[chat] result="${resultStr}"`);
-
-      const event: ToolInvocationResulted = {
-        conversationId,
-        timestamp: Date.now(),
-        eventType: "ToolInvocationResulted",
-        payload: {
-          toolName: "chat",
-          stepIndex: req.payload.stepIndex,
-          result: { value: resultStr, success: true },
-        },
-      };
-
-      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+      result = { value: resultStr, success: true };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[chat] error="${errorMsg}"`);
-
-      const event: ToolInvocationResulted = {
-        conversationId,
-        timestamp: Date.now(),
-        eventType: "ToolInvocationResulted",
-        payload: {
-          toolName: "chat",
-          stepIndex: req.payload.stepIndex,
-          result: { value: "", success: false, error: errorMsg },
-        },
-      };
-
-      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
+      result = { value: "", success: false, error: errorMsg };
     }
-  }
-);
+
+    const event: ToolInvocationResulted = {
+      conversationId,
+      timestamp: Date.now(),
+      eventType: "ToolInvocationResulted",
+      payload: { toolName: "chat", stepIndex: req.payload.stepIndex, result },
+    };
+
+    await publish(producer, TOPICS.CONVERSATION_EVENTS, event);
+  },
+});
 
 console.log("[chat] GeneralChatApp started.");

@@ -1,12 +1,11 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 
 // ─── Safe math evaluator ──────────────────────────────────────────────────────
@@ -82,11 +81,14 @@ const consumer = await createConsumer("math-tool-worker");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.TOOL_INVOCATION_REQUESTS],
-  async (_topic, _key, value) => {
-    const req = value as ToolInvocationRequested;
+  groupId: "math-tool-worker",
+  service: "math",
+  producer,
+  topic: TOPICS.TOOL_INVOCATION_REQUESTS,
+  types: ["ToolInvocationRequested"],
+  handler: async (req) => {
     if (req.payload.toolName !== "math") return;
 
     const { conversationId } = req;
@@ -123,8 +125,8 @@ await subscribeAndRun(
       },
     };
 
-    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
-  }
-);
+    await publish(producer, TOPICS.CONVERSATION_EVENTS, event);
+  },
+});
 
 console.log("[math] MathApp started.");

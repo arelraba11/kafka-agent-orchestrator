@@ -5,6 +5,18 @@ import {
   EachMessagePayload,
   KafkaConfig,
 } from "kafkajs";
+import { TOPICS, type TopicName } from "../topics";
+import {
+  MESSAGE_SCHEMAS,
+  TOPIC_MESSAGES,
+  keyOf,
+  messageTypeOf,
+  type MessageName,
+  type MessageOf,
+  type TopicMessage,
+} from "../schemas/index";
+import { processMessage, MAX_UNKNOWN_ATTEMPTS, type ConsumeDeps } from "./consume";
+import { OutboundContractViolationError, ProducerError, toIssues } from "./errors";
 
 // ─── Singleton Kafka instance ────────────────────────────────────────────────
 
@@ -54,21 +66,61 @@ export async function createProducer(): Promise<Producer> {
   });
 }
 
-export async function sendMessage(
+/**
+ * Checks an outbound message against its contract without sending it. Throws
+ * OutboundContractViolationError (non-retryable) when the message has no known type,
+ * the type does not belong to `topic`, or the schema rejects it.
+ */
+export function validateOutbound<T extends TopicName>(topic: T, message: TopicMessage<T>): void {
+  const type = messageTypeOf(message);
+  if (type === undefined) {
+    throw new OutboundContractViolationError(
+      `outbound message for ${topic} has no eventType or commandType`,
+      [{ path: "eventType", message: "missing discriminator" }],
+      "(unknown)",
+      topic
+    );
+  }
+  if (!(TOPIC_MESSAGES[topic] as readonly string[]).includes(type)) {
+    throw new OutboundContractViolationError(
+      `${type} does not belong on topic ${topic}`,
+      [{ path: "eventType", message: `${type} is not published to ${topic}` }],
+      type,
+      topic
+    );
+  }
+  const result = MESSAGE_SCHEMAS[type as MessageName].safeParse(message);
+  if (!result.success) {
+    throw new OutboundContractViolationError(
+      `outbound ${type} for ${topic} violates its contract`,
+      toIssues(result.error.issues),
+      type,
+      topic
+    );
+  }
+}
+
+/**
+ * Validates, then sends. The key is derived from the message (conversationId, or the
+ * original key for a dead letter), so callers cannot pick a wrong one. A contract
+ * violation throws OutboundContractViolationError before any send; a send failure is
+ * wrapped in ProducerError (retryable).
+ */
+export async function publish<T extends TopicName>(
   producer: Producer,
-  topic: string,
-  key: string,
-  value: unknown
+  topic: T,
+  message: TopicMessage<T>
 ): Promise<void> {
-  await producer.send({
-    topic,
-    messages: [
-      {
-        key,
-        value: JSON.stringify(value),
-      },
-    ],
-  });
+  validateOutbound(topic, message);
+  const key = keyOf(topic, message);
+  try {
+    await producer.send({
+      topic,
+      messages: [{ key, value: JSON.stringify(message) }],
+    });
+  } catch (cause) {
+    throw new ProducerError(`send to ${topic} failed: ${(cause as Error).message}`, { cause });
+  }
 }
 
 // ─── Consumer ────────────────────────────────────────────────────────────────
@@ -81,34 +133,55 @@ export async function createConsumer(groupId: string): Promise<Consumer> {
   });
 }
 
-export async function subscribeAndRun(
-  consumer: Consumer,
-  topics: string[],
-  handler: (topic: string, key: string | null, value: unknown) => Promise<void>
-): Promise<void> {
+export interface SubscribeOptions<N extends MessageName> {
+  consumer: Consumer;
+  groupId: string;
+  /** Short service name recorded in dead-letter records. */
+  service: string;
+  /** Used to write dead-letter records. */
+  producer: Producer;
+  topic: TopicName;
+  /** The message types this service handles; the handler receives exactly those. */
+  types: readonly N[];
+  handler: (message: MessageOf<N>) => Promise<void>;
+}
+
+/**
+ * Subscribes to one topic and runs every message through processMessage: validate,
+ * dead-letter poison, rethrow transient failures. See consume.ts for the semantics.
+ */
+export async function subscribeAndRun<N extends MessageName>(opts: SubscribeOptions<N>): Promise<void> {
+  const { consumer, groupId, service, producer, topic, types, handler } = opts;
+
   // Retry subscribe independently: UNKNOWN_TOPIC_OR_PARTITION resolves once
   // the broker has propagated topic metadata (typically within a few seconds).
-  await withRetry(`subscribe:${topics.join(",")}`, async () => {
-    for (const topic of topics) {
-      await consumer.subscribe({ topic, fromBeginning: false });
-    }
+  await withRetry(`subscribe:${topic}`, async () => {
+    await consumer.subscribe({ topic, fromBeginning: false });
   });
 
+  const deps: ConsumeDeps = {
+    publishDeadLetter: (record) => publish(producer, TOPICS.DEAD_LETTER_QUEUE, record),
+    attempts: new Map(),
+    now: () => Date.now(),
+    maxUnknownAttempts: MAX_UNKNOWN_ATTEMPTS,
+  };
+  const ctx = { topic, group: groupId, service, types };
+
   await consumer.run({
-    eachMessage: async ({ topic, message }: EachMessagePayload) => {
-      const key = message.key?.toString() ?? null;
-      const raw = message.value?.toString();
-      if (!raw) return;
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        console.error(`[kafka] Failed to parse message on topic ${topic}:`, raw);
-        return;
-      }
-
-      await handler(topic, key, parsed);
+    eachMessage: async ({ message, partition }: EachMessagePayload) => {
+      await processMessage(
+        {
+          topic,
+          partition,
+          offset: message.offset,
+          key: message.key,
+          value: message.value,
+          timestamp: message.timestamp ?? null,
+        },
+        ctx,
+        handler,
+        deps
+      );
     },
   });
 }

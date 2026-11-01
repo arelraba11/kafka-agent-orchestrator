@@ -1,13 +1,12 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { ToolName } from "../../../shared/schemas/common";
-import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
 import { callLLM } from "../../../shared/llm/openai";
 import { routerPlanPrompt } from "../../../shared/prompts/routerPlanPrompt";
@@ -104,13 +103,14 @@ const consumer = await createConsumer("router-plan-service");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.USER_COMMANDS],
-  async (_topic, _key, value) => {
-    const event = value as UserQueryReceived;
-    if (event.eventType !== "UserQueryReceived") return;
-
+  groupId: "router-plan-service",
+  service: "router",
+  producer,
+  topic: TOPICS.USER_COMMANDS,
+  types: ["UserQueryReceived"],
+  handler: async (event) => {
     const { conversationId, payload } = event;
     const sessionId = payload.sessionId;
 
@@ -126,12 +126,12 @@ await subscribeAndRun(
       payload: { steps },
     };
 
-    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
+    await publish(producer, TOPICS.CONVERSATION_EVENTS, planEvent);
 
     const routerLatency = Date.now() - event.timestamp;
     console.log(`[router] conversationId=${conversationId} plan=[${steps.map(s => s.tool).join(", ")}] input="${payload.userInput}"`);
     console.log(`[Benchmark] conversationId=${conversationId} routerLatency=${routerLatency}ms`);
-  }
-);
+  },
+});
 
 console.log("[router] RouterService started.");

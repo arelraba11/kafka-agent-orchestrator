@@ -1,7 +1,7 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
@@ -30,7 +30,7 @@ async function onPlanCompleted(
     payload: { results },
   };
 
-  await sendMessage(producer, TOPICS.USER_COMMANDS, conversationId, command);
+  await publish(producer, TOPICS.USER_COMMANDS, command);
 
   console.log(
     `[aggregator] SynthesizeFinalAnswerRequested emitted | conversationId=${conversationId}`
@@ -44,16 +44,14 @@ const consumer = await createConsumer("aggregator-service");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.CONVERSATION_EVENTS],
-  async (_topic, _key, value) => {
-    const event = value as { eventType: string };
-
-    if (event.eventType === "PlanCompleted") {
-      await onPlanCompleted(producer, event as PlanCompleted);
-    }
-  }
-);
+  groupId: "aggregator-service",
+  service: "aggregator",
+  producer,
+  topic: TOPICS.CONVERSATION_EVENTS,
+  types: ["PlanCompleted"],
+  handler: (event) => onPlanCompleted(producer, event),
+});
 
 console.log("[aggregator] AggregatorService started.");

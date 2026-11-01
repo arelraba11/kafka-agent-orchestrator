@@ -1,12 +1,11 @@
 import {
   createProducer,
   createConsumer,
-  sendMessage,
+  publish,
   subscribeAndRun,
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
 
 // ─── Static exchange rates (all relative to ILS) ──────────────────────────────
@@ -44,11 +43,14 @@ const consumer = await createConsumer("exchange-tool-worker");
 
 registerShutdown([producer, consumer]);
 
-await subscribeAndRun(
+await subscribeAndRun({
   consumer,
-  [TOPICS.TOOL_INVOCATION_REQUESTS],
-  async (_topic, _key, value) => {
-    const req = value as ToolInvocationRequested;
+  groupId: "exchange-tool-worker",
+  service: "exchange",
+  producer,
+  topic: TOPICS.TOOL_INVOCATION_REQUESTS,
+  types: ["ToolInvocationRequested"],
+  handler: async (req) => {
     if (req.payload.toolName !== "exchange") return;
 
     const { conversationId } = req;
@@ -94,8 +96,8 @@ await subscribeAndRun(
       },
     };
 
-    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, event);
-  }
-);
+    await publish(producer, TOPICS.CONVERSATION_EVENTS, event);
+  },
+});
 
 console.log("[exchange] ExchangeApp started.");
