@@ -1,0 +1,10 @@
+{
+  "conversationId": "unknown",
+  "timestamp": 1700000000000,
+  "eventType": "ToolInvocationRequested",
+  "payload": {
+    "toolName": "math",
+    "stepIndex": 0,
+    "input": {}
+  }
+}

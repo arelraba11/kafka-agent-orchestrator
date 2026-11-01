@@ -1,0 +1,9 @@
+{
+  "conversationId": "conv-1",
+  "timestamp": 1700000000000,
+  "eventType": "UserQueryReceived",
+  "payload": {
+    "userInput": "hi",
+    "sessionId": "s1"
+  }
+}

@@ -1,16 +1,15 @@
-// ─── PlanCompleted ───────────────────────────────────────────────────────────
-// Topic:    conversation-events
-// Producer: orchestrator.ts
-// Consumer: aggregator.ts
+import { z } from "zod";
+import { event, StepResult } from "./common";
 
-export interface PlanCompletedPayload {
-  results: Record<string, unknown>[];
-}
+export const PlanCompletedSchema = event(
+  "PlanCompleted",
+  z.object({ results: z.array(StepResult) }),
+  { sessionId: z.string() }
+).meta({
+  title: "PlanCompleted",
+  description:
+    "Every step of a plan produced a result. Topic: conversation-events. Producer: orchestrator. Consumer: aggregator.",
+});
 
-export interface PlanCompleted {
-  conversationId: string;
-  sessionId: string;
-  timestamp: number;
-  eventType: "PlanCompleted";
-  payload: PlanCompletedPayload;
-}
+export type PlanCompleted = z.infer<typeof PlanCompletedSchema>;
+export type PlanCompletedPayload = PlanCompleted["payload"];

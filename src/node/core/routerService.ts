@@ -6,6 +6,7 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
+import { ToolName } from "../../../shared/schemas/common";
 import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
 import { callLLM } from "../../../shared/llm/openai";
@@ -61,7 +62,7 @@ function generatePlanRegex(userInput: string): PlanStep[] {
 
 // ─── LLM plan generation ──────────────────────────────────────────────────────
 
-const VALID_TOOLS = new Set(["weather", "exchange", "math", "chat", "getProductInformation"]);
+const VALID_TOOLS = new Set<string>(ToolName.options);
 
 async function generatePlanLLM(userInput: string, sessionId: string): Promise<PlanStep[]> {
   try {

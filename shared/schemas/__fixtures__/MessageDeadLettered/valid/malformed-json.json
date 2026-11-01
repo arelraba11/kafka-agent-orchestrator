@@ -1,0 +1,30 @@
+{
+  "eventType": "MessageDeadLettered",
+  "schemaVersion": 1,
+  "conversationId": null,
+  "timestamp": 1700000000000,
+  "payload": {
+    "source": {
+      "topic": "tool-invocation-requests",
+      "partition": 1,
+      "offset": "42",
+      "key": null,
+      "timestamp": null
+    },
+    "consumer": {
+      "group": "math-tool-worker",
+      "service": "math"
+    },
+    "error": {
+      "class": "malformed-json",
+      "name": "MalformedMessageError",
+      "reason": "Unexpected token",
+      "attempts": 1
+    },
+    "originalValue": {
+      "encoding": "utf8",
+      "data": "{}",
+      "truncated": false
+    }
+  }
+}

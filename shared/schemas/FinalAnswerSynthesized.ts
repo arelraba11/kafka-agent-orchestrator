@@ -1,15 +1,14 @@
-// ─── FinalAnswerSynthesized ──────────────────────────────────────────────────
-// Topic:    conversation-events
-// Producer: synthesisWorker.ts
-// Consumer: userInterface.ts
+import { z } from "zod";
+import { event } from "./common";
 
-export interface FinalAnswerSynthesizedPayload {
-  answer: string;
-}
+export const FinalAnswerSynthesizedSchema = event(
+  "FinalAnswerSynthesized",
+  z.object({ answer: z.string() })
+).meta({
+  title: "FinalAnswerSynthesized",
+  description:
+    "The LLM-written answer for a conversation. An empty answer is allowed by the contract. Topic: conversation-events. Producer: answerSynthesizer. Consumer: webServer.",
+});
 
-export interface FinalAnswerSynthesized {
-  conversationId: string;
-  timestamp: number;
-  eventType: "FinalAnswerSynthesized";
-  payload: FinalAnswerSynthesizedPayload;
-}
+export type FinalAnswerSynthesized = z.infer<typeof FinalAnswerSynthesizedSchema>;
+export type FinalAnswerSynthesizedPayload = FinalAnswerSynthesized["payload"];

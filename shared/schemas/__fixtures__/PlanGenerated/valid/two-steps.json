@@ -1,0 +1,24 @@
+{
+  "conversationId": "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b",
+  "timestamp": 1700000000000,
+  "eventType": "PlanGenerated",
+  "payload": {
+    "steps": [
+      {
+        "tool": "weather",
+        "args": {
+          "city": "Paris"
+        }
+      },
+      {
+        "tool": "exchange",
+        "args": {
+          "currencyCode": "USD",
+          "targetCurrency": "ILS",
+          "amount": "{{step_0.result}}"
+        }
+      }
+    ]
+  },
+  "sessionId": "s1"
+}

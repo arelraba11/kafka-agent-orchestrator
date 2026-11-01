@@ -1,5 +1,6 @@
 import { TOPICS, type TopicName } from "../../../shared/topics";
 import type { PlanState } from "../../../shared/state/planStore";
+import type { StepResultEntry } from "../../../shared/schemas/common";
 import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
 import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
 import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
@@ -46,7 +47,7 @@ export interface TransitionResult {
  */
 export function resolvePlaceholders(
   args: Record<string, unknown>,
-  results: Record<string, unknown>[]
+  results: ReadonlyArray<{ result?: Record<string, unknown> }>
 ): Record<string, unknown> {
   const resolved: Record<string, unknown> = {};
 
@@ -54,7 +55,7 @@ export function resolvePlaceholders(
     if (typeof val === "string") {
       resolved[key] = val.replace(/\{\{step_(\d+)\.result\}\}/g, (_match, nStr) => {
         const n = parseInt(nStr, 10);
-        const entry = results[n] as { result?: Record<string, unknown> } | undefined;
+        const entry = results[n];
         if (!entry) return "";
         const result = entry.result;
         if (!result) return "";
@@ -79,7 +80,7 @@ function requestMessage(
   conversationId: string,
   step: PlanStep,
   stepIndex: number,
-  results: Record<string, unknown>[],
+  results: StepResultEntry[],
   now: number
 ): OutboundMessage {
   const value: ToolInvocationRequested = {
@@ -99,7 +100,7 @@ function failureMessages(
   conversationId: string,
   reason: string,
   failedTool: string,
-  completedResults: Record<string, unknown>[],
+  completedResults: StepResultEntry[],
   now: number
 ): OutboundMessage[] {
   const planFailed: PlanFailed = {

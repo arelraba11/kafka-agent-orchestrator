@@ -1,0 +1,40 @@
+{
+  "eventType": "MessageDeadLettered",
+  "schemaVersion": 1,
+  "conversationId": "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b",
+  "timestamp": 1700000000000,
+  "payload": {
+    "source": {
+      "topic": "tool-invocation-requests",
+      "partition": 1,
+      "offset": "42",
+      "key": "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b",
+      "timestamp": "1700000000000"
+    },
+    "consumer": {
+      "group": "math-tool-worker",
+      "service": "math"
+    },
+    "error": {
+      "class": "outbound-contract-violation",
+      "name": "OutboundContractViolationError",
+      "reason": "invalid ToolInvocationResulted",
+      "issues": [
+        {
+          "path": "payload.result",
+          "message": "bad"
+        }
+      ],
+      "outbound": {
+        "topic": "conversation-events",
+        "messageType": "ToolInvocationResulted"
+      },
+      "attempts": 1
+    },
+    "originalValue": {
+      "encoding": "utf8",
+      "data": "{}",
+      "truncated": false
+    }
+  }
+}

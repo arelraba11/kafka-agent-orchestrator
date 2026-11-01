@@ -1,0 +1,10 @@
+{
+  "conversationId": "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b",
+  "timestamp": 1700000000000,
+  "eventType": "PlanFailed",
+  "payload": {
+    "reason": "plan has no steps",
+    "failedTool": "none",
+    "completedResults": []
+  }
+}

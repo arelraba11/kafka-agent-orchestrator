@@ -1,16 +1,17 @@
-// ─── UserQueryReceived ───────────────────────────────────────────────────────
-// Topic:    user-commands
-// Producer: userInterface.ts
-// Consumer: routerService.ts (plan generator)
+import { z } from "zod";
+import { event } from "./common";
 
-export interface UserQueryReceivedPayload {
-  userInput: string;
-  sessionId: string;
-}
+export const UserQueryReceivedSchema = event(
+  "UserQueryReceived",
+  z.object({
+    userInput: z.string().min(1),
+    sessionId: z.string(),
+  })
+).meta({
+  title: "UserQueryReceived",
+  description:
+    "A user typed a query. Topic: user-commands. Producer: webServer. Consumers: routerService (plans it), answerSynthesizer (caches it).",
+});
 
-export interface UserQueryReceived {
-  conversationId: string;
-  timestamp: number;
-  eventType: "UserQueryReceived";
-  payload: UserQueryReceivedPayload;
-}
+export type UserQueryReceived = z.infer<typeof UserQueryReceivedSchema>;
+export type UserQueryReceivedPayload = UserQueryReceived["payload"];

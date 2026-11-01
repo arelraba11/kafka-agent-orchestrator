@@ -6,6 +6,7 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
+import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import { join } from "path";
 
 const PORT = 3001;
@@ -101,12 +102,13 @@ Bun.serve({
       // Register BEFORE producing — closes race window
       pending.set(conversationId, ws);
 
-      await sendMessage(producer, TOPICS.USER_COMMANDS, conversationId, {
+      const queryEvent: UserQueryReceived = {
         conversationId,
         timestamp: Date.now(),
         eventType: "UserQueryReceived",
         payload: { userInput, sessionId },
-      });
+      };
+      await sendMessage(producer, TOPICS.USER_COMMANDS, conversationId, queryEvent);
 
       ws.send(JSON.stringify({ type: "ack", conversationId }));
       console.log(`[webserver] conversationId=${conversationId} sessionId=${sessionId} query="${userInput}"`);
