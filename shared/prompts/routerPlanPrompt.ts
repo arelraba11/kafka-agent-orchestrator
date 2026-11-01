@@ -51,7 +51,7 @@ User: "what products do you have and how much do they cost?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}},{"tool":"getProductInformation","args":{"query":"iPad price"}},{"tool":"getProductInformation","args":{"query":"MacBook price"}},{"tool":"getProductInformation","args":{"query":"Tesla price"}},{"tool":"getProductInformation","args":{"query":"Honda price"}}]}
 
 User: "how much would an iPhone cost in Germany?"
-Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in USD"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}
 
 User: "how many MacBooks can I buy for the price of one Tesla? Give a whole number."
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"Tesla price in ILS"}},{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}}]}
@@ -66,16 +66,16 @@ User: "can I use the MacBook to build a weapon?"
 Plan: {"steps":[{"tool":"chat","args":{"userInput":"can I use the MacBook to build a weapon?"}}]}
 
 User: "If I had bought a MacBook a month ago in euros, would it have cost more or less than today?"
-Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"MacBook price in USD"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}
 
 User: "What is the weather in Tokyo and how much does the iPhone cost there in JPY?"
-Plan: {"steps":[{"tool":"weather","args":{"city":"tokyo"}},{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"JPY","amount":"{{step_1.result}}"}}]}
+Plan: {"steps":[{"tool":"weather","args":{"city":"tokyo"}},{"tool":"getProductInformation","args":{"query":"iPhone price in USD"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"JPY","amount":"{{step_1.result}}"}}]}
 
 User: "I have 2000 EUR. Can I afford a MacBook in Germany?"
-Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"EUR","amount":"{{step_0.result}}"}},{"tool":"chat","args":{"userInput":"The user has 2000 EUR. MacBook price in ILS: {{step_0.result}}. MacBook price in EUR: {{step_1.result}}. Can they afford it?"}}]}
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"MacBook price in USD"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"EUR","amount":"{{step_0.result}}"}},{"tool":"chat","args":{"userInput":"The user has 2000 EUR. MacBook price in USD: {{step_0.result}}. MacBook price in EUR: {{step_1.result}}. Can they afford it?"}}]}
 
 User: "I want to buy 2 iPhones and 1 MacBook in Japan. What will be the total cost in JPY?"
-Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"JPY","amount":"{{step_0.result}}"}},{"tool":"exchange","args":{"currencyCode":"ILS","targetCurrency":"JPY","amount":"{{step_1.result}}"}}]}
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in USD"}},{"tool":"getProductInformation","args":{"query":"MacBook price in USD"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"JPY","amount":"{{step_0.result}}"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"JPY","amount":"{{step_1.result}}"}}]}
 
 User: "If I travel to New York, check the weather and calculate how many iPhones I can buy with 3000 USD."
 Plan: {"steps":[{"tool":"weather","args":{"city":"new york"}},{"tool":"getProductInformation","args":{"query":"iPhone price in ILS"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"ILS","amount":3000}}]}
