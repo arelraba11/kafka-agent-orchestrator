@@ -26,7 +26,8 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Services publi
 │  orchestrator.ts  ◄──── LevelDB (.plan-store/)                              │
 │    │  reads:     PlanGenerated from conversation-events                     │
 │    │  action:    saves plan to LevelDB, dispatches step 1                   │
-│    │  produces:  ToolInvocationRequested { conversationId, toolName, args } │
+│    │  produces:  ToolInvocationRequested { conversationId, toolName,        │
+│    │             stepIndex, input }                                         │
 │    │  topic:     tool-invocation-requests                                   │
 │    ▼                                                                        │
 │  [Tool Workers — each is an independent consumer group]                     │
@@ -36,7 +37,8 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Services publi
 │    ├── generalChatApp.ts   → handles toolName="chat"                        │
 │    └── rag_retriever.py    → handles toolName="getProductInformation"       │
 │    │                                                                        │
-│    │  each worker produces: ToolInvocationResulted { result }               │
+│    │  each worker produces: ToolInvocationResulted { toolName, stepIndex,   │
+│    │                        result }                                        │
 │    │  topic:                conversation-events                             │
 │    ▼                                                                        │
 │  orchestrator.ts  (continues)                                               │
@@ -175,9 +177,11 @@ The only stateful service. Uses **LevelDB** (`.plan-store/`) keyed by `conversat
 PlanGenerated  → save plan (stepIndex=0, results=[]) → dispatch step[0]
 ToolInvocationResulted → load state → append result → resolve {{step_N.result}}
   → if more steps: dispatch next step
-  → if done: emit PlanCompleted, delete plan
-  → if error: emit PlanFailed, publish to dead-letter-queue
+  → if done: emit PlanCompleted, keep the plan as a `completed` tombstone
+  → if error: emit PlanFailed, publish to dead-letter-queue, keep a `failed` tombstone
 ```
+
+Every request and result carries `stepIndex`. The orchestrator applies a result only when it matches the step the plan is awaiting; anything else is ignored with a logged reason. The handler emits the outbound events first, then persists the new state (`sync: true`), and Kafka commits the offset after the handler returns. A crash anywhere in that sequence replays the message, and the replay is either recomputed identically or ignored. Terminal plans are never deleted, so a late or replayed message for a finished plan is recognised and ignored.
 
 LevelDB survives restarts. Kafka redelivers events whose offsets were not committed.
 
@@ -197,8 +201,10 @@ Aggregator = CQRS bridge: PlanCompleted (event) → SynthesizeFinalAnswerRequest
 
 Separating commands from events means each service has a single, narrow responsibility: producers never need to know who consumes their output, and consumers never mutate shared state. This makes each microservice independently deployable, testable, and replaceable without breaking the rest of the pipeline.
 
-### Idempotency (partial)
-Workers filter by `toolName` and process only their own requests. The orchestrator drops a `ToolInvocationResulted` whose `conversationId` has no stored plan (already completed or deleted). That is all the protection there is: a duplicate result for a *live* plan is not detected, and workers do not deduplicate. See Known limitations.
+### Idempotency
+At-least-once delivery plus an idempotent orchestrator gives effectively-once plan state transitions. A `ToolInvocationResulted` is applied only if the plan is `running`, `stepIndex` is an integer equal to the step the plan awaits, and `toolName` matches that step. Otherwise it is ignored and logged as `ignored reason=<unknown-plan | plan-terminal | missing-step-index | duplicate-step | future-step | tool-mismatch>`. A replayed `PlanGenerated` for an existing plan is ignored as `duplicate-plan`.
+
+Outbound events (`ToolInvocationRequested`, `PlanCompleted`, `PlanFailed`, dead-letter records) are at-least-once: never lost, sometimes duplicated. Workers do not deduplicate, so a duplicate request re-runs the tool, and the orchestrator absorbs the extra result through `stepIndex`. The guarantee relies on each conversation mapping to one partition handled serially by a single orchestrator (see the invariant comment in `orchestrator.ts`). See Known limitations.
 
 ---
 
@@ -208,7 +214,7 @@ Workers filter by `toolName` and process only their own requests. The orchestrat
 |---|---|---|
 | Worker crash | Kafka retains messages at the last committed offset; the worker rejoins its consumer group on restart | Automatic |
 | Orchestrator crash | Kafka redelivers uncommitted events; plan state is read from LevelDB when the next result arrives (no startup scan) | Automatic |
-| Duplicate events | A result for an unknown `conversationId` is dropped. A duplicate while the plan is live is **not** detected: it is appended and advances `stepIndex`, which can skip a step or complete the plan early. A redelivered `PlanGenerated` overwrites state and re-dispatches step 0. | Not handled (fixed in phase 2) |
+| Duplicate events | The orchestrator applies a result only for the step the plan is awaiting (`stepIndex` + `toolName`). Duplicates, stale, mismatched and post-terminal results, and a replayed `PlanGenerated`, are ignored and logged with a reason. The orchestrator emits before it persists, so a crash replays the message instead of losing a step. | Automatic for plan state (duplicate downstream events remain, see Known limitations) |
 | Unrecoverable error | Router + orchestrator publish to `dead-letter-queue` | Manual inspection |
 
 Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
@@ -219,8 +225,11 @@ Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
 
 | Limitation | Fixed in |
 |---|---|
-| Duplicate events are not handled for live plans (see Resilience): can skip a step, complete a plan early, or re-run a tool | Phase 2 |
-| The RAG consumer uses `auto_offset_reset="earliest"` while the TS consumers use `fromBeginning: false`, so a fresh `rag-tool-worker` group replays old requests | Phase 2 |
+| A crash between the orchestrator publishing `PlanCompleted` and persisting `completed` replays the last result, so `PlanCompleted` goes out twice. The aggregator and synthesizer then run twice: two LLM calls, a duplicate answer and a doubled `history.json` entry (the web client shows only the first answer) | Phase 4 |
+| A poison message blocks its partition: a non-retryable error is rethrown, kafkajs redelivers it forever, and every conversation hashed to that partition stops making progress | Phase 3 |
+| A step nobody answers (worker down, unknown tool) leaves the plan `running` forever; there is no step timeout | Phase 4 |
+| Crashed services are not restarted (`scripts/start.ts` spawns each process once). The RAG worker exits on a failed result send, so its plans stall until it is started again | Phase 4 (Part B) |
+| Plan tombstones (`completed` and `failed`) are kept in `.plan-store/` forever; there is no pruning | Known design limit |
 | The OpenAI client is built at import, so the router and synthesizer crash at startup without `OPENAI_API_KEY` in every mode | Phase 4 |
 | Synthesizer failures are silent: the user gets no answer and no error | Phase 4 |
 | A router failure goes to the dead-letter queue only; the UI gets no error and keeps waiting | Phase 4 |
@@ -255,7 +264,7 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 
 **Stateful processing:** The Orchestrator accumulates state incrementally from the event stream rather than polling a DB. `{{step_N.result}}` placeholder resolution enables chained tool data flow without any shared memory. The Aggregator is fully stateless — by the time `PlanCompleted` arrives, all results are embedded in its payload.
 
-**CQRS:** Separating commands (`user-commands`, `tool-invocation-requests`) from facts (`conversation-events`) means each service is independently deployable and testable. Delivery is at-least-once, and duplicate handling is only partial (see Known limitations).
+**CQRS:** Separating commands (`user-commands`, `tool-invocation-requests`) from facts (`conversation-events`) means each service is independently deployable and testable. Delivery is at-least-once, and the orchestrator makes its own state transitions idempotent (see Idempotency and Known limitations).
 
 **Trade-offs:**
 

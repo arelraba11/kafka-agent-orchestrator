@@ -58,7 +58,7 @@ The UI receives the weather answer for the second query after the worker is back
 
 **Why it recovers:** Two mechanisms work together. Kafka redelivers events whose offsets the orchestrator had not committed. Plan state lives in LevelDB (`shared/state/planStore.ts`, `.plan-store/`), so when the next `ToolInvocationResulted` for a stored plan arrives, the restarted orchestrator finds the state and continues from the saved `stepIndex`.
 
-There is no startup scan: the orchestrator does not look for incomplete plans when it starts. A plan whose result event was already committed and consumed before the crash, with the next step never dispatched, is not resumed.
+There is no startup scan: the orchestrator does not look for incomplete plans when it starts. Because the next request is emitted before the new state is persisted and before the offset is committed, a crash mid-handler replays the triggering event instead of skipping a step.
 
 ### Steps
 
@@ -98,7 +98,7 @@ convert 50 eur to usd
 
 ### Expected outcome
 
-New requests complete end-to-end after the restart. A plan that was in flight when the orchestrator died is also redelivered by Kafka if its triggering event was not yet committed; plans that fall between committed events are not resumed (see above).
+New requests complete end-to-end after the restart. A plan that was in flight when the orchestrator died is redelivered by Kafka from the last committed offset, and the idempotent handler either re-applies the event or ignores it as a duplicate.
 
 ---
 
@@ -106,28 +106,23 @@ New requests complete end-to-end after the restart. A plan that was in flight wh
 
 **What breaks:** A `ToolInvocationRequested` or `ToolInvocationResulted` event is delivered more than once (consumer offset not committed, Kafka retry, or a manual re-publish via the CLI).
 
-**What the code does:** Duplicate handling is partial. Phase 2 will fix the gaps listed here.
+**What the code does:** The orchestrator is idempotent. `ToolInvocationRequested` and `ToolInvocationResulted` carry `payload.stepIndex`, and workers echo it back. The orchestrator emits its outbound events first, persists the new plan state second (`sync: true`), and Kafka commits the offset after the handler returns, so a crash at any point replays the message safely.
 
 ### What is protected
 
 - **Workers filter by `toolName`.** Each worker ignores requests for other tools (`if (req.payload.toolName !== "weather") return;` in `src/node/apps/weatherApp.ts`, and the same in the other workers). That is routing, not deduplication.
-- **A stale result is dropped.** When a `ToolInvocationResulted` arrives for a `conversationId` with no stored plan (the plan already completed and was deleted), the orchestrator logs a warning and returns:
-
-```typescript
-// src/node/orchestration/orchestrator.ts
-if (!state) {
-  console.warn(`[orchestrator] Received result for unknown conversationId=${conversationId}, skipping.`);
-  return;
-}
-```
+- **A duplicate, stale or out-of-order result never changes the plan.** The orchestrator applies a result only when the plan is `running`, `stepIndex` is the step it awaits, and `toolName` matches that step. Otherwise it writes nothing, emits nothing and logs `ignored reason=<reason>`. The reasons are `unknown-plan`, `plan-terminal` (the plan already completed or failed), `missing-step-index`, `duplicate-step`, `future-step` and `tool-mismatch`.
+- **A replayed `PlanGenerated`** for a conversation that already has a plan is ignored (`duplicate-plan`).
+- **Terminal plans are kept as tombstones**, so a result that arrives after the plan finished is recognised (`plan-terminal`) instead of looking like an unknown conversation.
+- **The RAG worker no longer loses a result.** It commits an offset only after the result send is acknowledged, so a failed send leaves the request uncommitted for redelivery.
 
 ### What is not protected
 
-- **A duplicate result while the plan is live** is not detected. The orchestrator appends it to `results` and advances `stepIndex` without checking it against `plan[stepIndex].tool`. This can skip a step or emit `PlanCompleted` before all steps ran.
-- **A redelivered `PlanGenerated`** overwrites the stored state and re-dispatches step 0.
-- **Workers do not deduplicate**, so a duplicate `ToolInvocationRequested` runs the tool again and emits another result.
+- **Workers do not deduplicate**, so a duplicate `ToolInvocationRequested` runs the tool again and emits another result. The orchestrator ignores the extra one (`duplicate-step`).
+- **A duplicate `PlanCompleted` downstream.** If the orchestrator crashes after publishing `PlanCompleted` and before persisting `completed`, the last result is replayed and `PlanCompleted` is published again. The aggregator and synthesizer then run twice, giving two LLM calls and a doubled `history.json` entry. The web client shows only the first answer. Planned for phase 4.
+- **Plan tombstones are never pruned** and grow without bound.
 
-### Steps to reproduce the stale-result drop
+### Steps to reproduce the terminal-plan drop
 
 ```bash
 # After a plan has completed, re-publish one of its ToolInvocationResulted events.
@@ -139,11 +134,13 @@ docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --from-beginning \
   --max-messages 30
 
-# 2. Copy a ToolInvocationResulted JSON, then re-publish it
+# 2. Copy a conversationId and its last ToolInvocationResulted JSON, then re-publish
+#    it with the key, as <conversationId>|<json> on one line
 docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh \
   --bootstrap-server localhost:9092 \
-  --topic conversation-events
-# Paste the JSON on one line and press Enter.
+  --topic conversation-events \
+  --property parse.key=true \
+  --property key.separator='|'
 ```
 
 ### Expected log output (orchestrator.log)
@@ -151,12 +148,12 @@ docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh \
 ```
 [orchestrator] conversationId=<id> plan completed, results=1
 [Benchmark] conversationId=<id> workerLatency=Xms
-[orchestrator] Received result for unknown conversationId=<id>, skipping.
+[orchestrator] conversationId=<id> ignored reason=plan-terminal plan status=completed
 ```
 
-The UI receives exactly one answer.
+The UI receives exactly one answer, and `aggregator.log` shows no second `PlanCompleted`.
 
-To see the unprotected case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. From reading `orchestrator.ts:157-160`, the duplicate is counted as the next step's result. No automated test covers this yet; phase 5 adds integration tests.
+To see the live-plan case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. The orchestrator logs `ignored reason=duplicate-step` and the plan finishes normally. No automated integration test covers this yet; phase 5 adds them.
 
 ---
 
@@ -166,4 +163,4 @@ To see the unprotected case, re-publish a `ToolInvocationResulted` from step 1 o
 |---|---|---|
 | Worker crash | Kafka redelivers from the last committed offset on restart | Automatic |
 | Orchestrator crash | Kafka redelivery + LevelDB state when the next result arrives (no startup scan) | Automatic for redelivered events |
-| Duplicate events | Stale result for an unknown `conversationId` is dropped; a duplicate for a live plan is not detected | Partial (fixed in phase 2) |
+| Duplicate events | `stepIndex` + `toolName` check in the orchestrator; emit, then persist, then offset commit | Automatic for plan state (duplicate downstream events remain) |

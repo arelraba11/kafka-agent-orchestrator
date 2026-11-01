@@ -85,8 +85,8 @@ Differences from the envelope:
 |---|---|---|---|
 | `UserQueryReceived` | `eventType` | `user-commands` | `{ userInput: string, sessionId: string }` |
 | `PlanGenerated` | `eventType` | `conversation-events` | `{ steps: { tool: string, args: Record<string, unknown> }[] }` |
-| `ToolInvocationRequested` | `eventType` | `tool-invocation-requests` | `{ toolName: string, input: Record<string, unknown> }` |
-| `ToolInvocationResulted` | `eventType` | `conversation-events` | `{ toolName: string, result: Record<string, unknown> }` |
+| `ToolInvocationRequested` | `eventType` | `tool-invocation-requests` | `{ toolName: string, stepIndex: number, input: Record<string, unknown> }` |
+| `ToolInvocationResulted` | `eventType` | `conversation-events` | `{ toolName: string, stepIndex: number, result: Record<string, unknown> }` |
 | `PlanCompleted` | `eventType` | `conversation-events` | `{ results: Record<string, unknown>[] }` |
 | `PlanFailed` | `eventType` | `conversation-events` | `{ reason: string, failedTool: string, completedResults: Record<string, unknown>[] }` |
 | `SynthesizeFinalAnswerRequested` | `commandType` | `user-commands` | `{ results: Record<string, unknown>[] }` |
@@ -127,11 +127,17 @@ Logs `[Benchmark] routerLatency=Xms`.
 
 The state machine at the centre of the pipeline:
 
-1. On `PlanGenerated`: saves the full plan to LevelDB (`stepIndex=0`, `status=pending`), dispatches `ToolInvocationRequested` for `steps[0]` and sets `status=running`.
-2. On `ToolInvocationResulted`: appends the result, increments `stepIndex`, then either dispatches the next step or — if all steps are done — emits `PlanCompleted` and deletes the plan from LevelDB. Step args may reference earlier results with `{{step_N.result}}`.
-3. If a result carries an `error` field, or a dispatch fails, it emits `PlanFailed`, writes to `dead-letter-queue` and deletes the plan.
+The transition logic is a pure function, `transition(state, event, now)` in `src/node/orchestration/planTransition.ts`, which returns the new state, the messages to emit and a decision. `orchestrator.ts` is the shell around it: it loads the state, calls `transition`, emits the messages, persists the new state and returns, and kafkajs then commits the offset.
 
-**Idempotency (partial):** only a `ToolInvocationResulted` for an *unknown* `conversationId` (plan already completed or deleted) is dropped. While a plan is live there is no check that a result matches `plan[stepIndex].tool`, so a duplicate result is appended and advances `stepIndex`. That can skip a step or emit `PlanCompleted` early. A redelivered `PlanGenerated` overwrites state and re-dispatches step 0. Workers do not deduplicate, so a duplicate `ToolInvocationRequested` re-runs the tool. This is fixed in phase 2.
+1. On `PlanGenerated`: saves the full plan to LevelDB (`stepIndex=0`, `status=running`) and dispatches `ToolInvocationRequested` (with `stepIndex: 0`) for `steps[0]`. An empty plan fails immediately with `failedTool: "none"`.
+2. On `ToolInvocationResulted`: appends the result and increments `stepIndex`, then either dispatches the next step (with its `stepIndex`) or — if all steps are done — emits `PlanCompleted` and marks the plan `completed`. Step args may reference earlier results with `{{step_N.result}}`.
+3. If a result carries an `error` field, it emits `PlanFailed`, writes to `dead-letter-queue` and marks the plan `failed`. A failed send is not turned into `PlanFailed`: the handler throws, kafkajs redelivers, and the plan stalls until the broker is back.
+
+Terminal plans stay in LevelDB as tombstones; the orchestrator never deletes plan state.
+
+**Idempotency:** a `ToolInvocationResulted` is applied only when the plan is `running`, `payload.stepIndex` is an integer equal to the step the plan is awaiting, and `toolName` equals that step's tool. Everything else is ignored, with no write and no emit, and logged as `ignored reason=...`: `unknown-plan`, `plan-terminal`, `missing-step-index`, `duplicate-step`, `future-step` (logged as an error) or `tool-mismatch`. A `PlanGenerated` for a conversation that already has a plan is ignored as `duplicate-plan`. There is no fallback for results without `stepIndex`.
+
+**Delivery order:** emit, then persist (`sync: true`), then offset commit. A crash between any two of these replays the message against the unchanged or already-updated state, and the replay is either recomputed identically or ignored. Store read and write errors are rethrown, so kafkajs redelivers instead of the handler continuing on stale state. Outbound events are at-least-once; workers do not deduplicate, so a duplicate `ToolInvocationRequested` re-runs the tool and the orchestrator absorbs the extra result through `stepIndex`. The correctness argument depends on one partition per conversation being handled serially by a single orchestrator (the invariant comment above `handle()`).
 
 Logs `[Benchmark] workerLatency=Xms`.
 
@@ -141,15 +147,15 @@ Logs `[Benchmark] workerLatency=Xms`.
 ```typescript
 interface PlanState {
   plan: { tool: string; args: Record<string, unknown> }[];
-  stepIndex: number;                       // next step to dispatch
+  stepIndex: number;                       // step awaiting a result; equals plan.length once completed
   results: Record<string, unknown>[];      // accumulated tool results
-  status: "pending" | "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed";
   planReceivedAt: number;                  // epoch ms — for latency computation
   sessionId: string;                       // groups conversations into a session for history
 }
 ```
 
-Keyed by `conversationId`. State survives process restarts, but nothing scans the store on startup: a plan continues only when its next `ToolInvocationResulted` arrives (Kafka redelivers events whose offsets were not committed). `deletePlan` is called after `PlanCompleted` is published.
+Keyed by `conversationId`. State survives process restarts, but nothing scans the store on startup: a plan continues only when its next `ToolInvocationResulted` arrives (Kafka redelivers events whose offsets were not committed). Completed and failed plans are kept as tombstones and never deleted, so late or replayed messages for them can be recognised and ignored. The store grows without bound. `getPlan` and `savePlan` rethrow I/O errors, and writes use `{ sync: true }`.
 
 ---
 
@@ -169,7 +175,7 @@ Workers keep no state. Each handles exactly one tool name and ignores all others
 #### RAG Retriever (Python)
 **File:** `src/python/rag/rag_retriever.py` | **Tool name:** `getProductInformation`
 
-Indexes the product documents (`data/products/{honda,ipad,iphone,macbook,tesla}.txt`, 21 chunks from `index_kb.py`'s `split_into_chunks`) into an embedded ChromaDB `PersistentClient` using sentence-transformer embeddings. On request, performs a top-K similarity search and returns the retrieved text as `result.context` (standard tools return `result.value`; the orchestrator relies on this shape). The worker is a plain Kafka consumer loop in Python 3.12 using the `rag-tool-worker` group.
+Indexes the product documents (`data/products/{honda,ipad,iphone,macbook,tesla}.txt`, 21 chunks from `index_kb.py`'s `split_into_chunks`) into an embedded ChromaDB `PersistentClient` using sentence-transformer embeddings. On request, performs a top-K similarity search and returns the retrieved text as `result.context` (standard tools return `result.value`; the orchestrator relies on this shape). The worker is a plain Kafka consumer loop in Python 3.12 using the `rag-tool-worker` group. It echoes `payload.stepIndex` into its result. Offsets are committed manually (`enable_auto_commit=False`): the result is sent with `send(...).get(timeout=10)`, which raises on a failed send, and only then is the record committed. A failed send therefore exits the process uncommitted and the request is redelivered on restart; nothing restarts the worker automatically. Records that are skipped (other tools or event types) are committed immediately. `auto_offset_reset` is `latest`, matching the TS consumers' `fromBeginning: false`.
 
 ---
 
@@ -209,9 +215,9 @@ The Orchestrator is the only service with durable state. LevelDB is used as a lo
 
 State lifecycle per conversation:
 ```
-savePlan()     ← PlanGenerated received
-  updatePlan() ← each ToolInvocationResulted (stepIndex++)
-  deletePlan() ← PlanCompleted published
+savePlan() ← PlanGenerated received (status=running, stepIndex=0)
+savePlan() ← each ToolInvocationResulted (stepIndex++), after the next request is emitted
+savePlan() ← plan finished (status=completed, or failed); the entry is kept as a tombstone
 ```
 
 The Aggregator is stateless — by the time `PlanCompleted` arrives, the full result set is embedded in the event payload. No stream join or buffering is required.
