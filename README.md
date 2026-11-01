@@ -49,7 +49,7 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Services publi
 │    │  produces:  PlanCompleted { sessionId, payload: { results[] } }        │
 │    │  topic:     conversation-events                                        │
 │    │             on error:                                                  │
-│    │  produces:  PlanFailed + dead-letter-queue entry                       │
+│    │  produces:  PlanFailed (no dead letter)                                │
 │    ▼                                                                        │
 │  aggregator.ts                                                              │
 │    │  reads:     PlanCompleted from conversation-events                     │
@@ -82,7 +82,7 @@ An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Services publi
 | `user-commands` | Commands | `UserQueryReceived`, `SynthesizeFinalAnswerRequested` |
 | `conversation-events` | Events | `PlanGenerated`, `ToolInvocationResulted`, `PlanCompleted`, `PlanFailed`, `FinalAnswerSynthesized` |
 | `tool-invocation-requests` | Commands | `ToolInvocationRequested` |
-| `dead-letter-queue` | Errors | Failures from the router and the orchestrator |
+| `dead-letter-queue` | Poison messages | `MessageDeadLettered`: a message that can never be processed (malformed, contract-violating, key mismatch, or crashing a handler). Failed plans are `PlanFailed` events, not dead letters |
 
 4 topics × 3 partitions each.
 
@@ -178,7 +178,7 @@ PlanGenerated  → save plan (stepIndex=0, results=[]) → dispatch step[0]
 ToolInvocationResulted → load state → append result → resolve {{step_N.result}}
   → if more steps: dispatch next step
   → if done: emit PlanCompleted, keep the plan as a `completed` tombstone
-  → if error: emit PlanFailed, publish to dead-letter-queue, keep a `failed` tombstone
+  → if error: emit PlanFailed, keep a `failed` tombstone (no dead letter: a failed plan is a domain event)
 ```
 
 Every request and result carries `stepIndex`. The orchestrator applies a result only when it matches the step the plan is awaiting; anything else is ignored with a logged reason. The handler emits the outbound events first, then persists the new state (`sync: true`), and Kafka commits the offset after the handler returns. A crash anywhere in that sequence replays the message, and the replay is either recomputed identically or ignored. Terminal plans are never deleted, so a late or replayed message for a finished plan is recognised and ignored.
@@ -215,7 +215,8 @@ Outbound events (`ToolInvocationRequested`, `PlanCompleted`, `PlanFailed`, dead-
 | Worker crash | Kafka retains messages at the last committed offset; the worker rejoins its consumer group on restart | Automatic |
 | Orchestrator crash | Kafka redelivers uncommitted events; plan state is read from LevelDB when the next result arrives (no startup scan) | Automatic |
 | Duplicate events | The orchestrator applies a result only for the step the plan is awaiting (`stepIndex` + `toolName`). Duplicates, stale, mismatched and post-terminal results, and a replayed `PlanGenerated`, are ignored and logged with a reason. The orchestrator emits before it persists, so a crash replays the message instead of losing a step. | Automatic for plan state (duplicate downstream events remain, see Known limitations) |
-| Unrecoverable error | Router + orchestrator publish to `dead-letter-queue` | Manual inspection |
+| Poison message (malformed JSON, contract violation, key mismatch, a handler bug) | The consumer wrapper writes a `MessageDeadLettered` record to `dead-letter-queue` and the offset is committed, so the partition keeps flowing. An unknown error is retried 3 times first | Manual inspection of the dead letter |
+| Transient infrastructure failure (LevelDB or producer I/O) | Handlers throw `StoreError` / `ProducerError`; the message is never dead-lettered and kafkajs redelivers it | Automatic |
 
 Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
 
@@ -226,13 +227,18 @@ Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
 | Limitation | Fixed in |
 |---|---|
 | A crash between the orchestrator publishing `PlanCompleted` and persisting `completed` replays the last result, so `PlanCompleted` goes out twice. The aggregator and synthesizer then run twice: two LLM calls, a duplicate answer and a doubled `history.json` entry (the web client shows only the first answer) | Phase 4 |
-| A poison message blocks its partition: a non-retryable error is rethrown, kafkajs redelivers it forever, and every conversation hashed to that partition stops making progress | Phase 3 |
 | A step nobody answers (worker down, unknown tool) leaves the plan `running` forever; there is no step timeout | Phase 4 |
 | Crashed services are not restarted (`scripts/start.ts` spawns each process once). The RAG worker exits on a failed result send, so its plans stall until it is started again | Phase 4 (Part B) |
 | Plan tombstones (`completed` and `failed`) are kept in `.plan-store/` forever; there is no pruning | Known design limit |
 | The OpenAI client is built at import, so the router and synthesizer crash at startup without `OPENAI_API_KEY` in every mode | Phase 4 |
 | Synthesizer failures are silent: the user gets no answer and no error | Phase 4 |
-| A router failure goes to the dead-letter queue only; the UI gets no error and keeps waiting | Phase 4 |
+| A router failure never reaches the UI: a failed send is retried forever, and a handler bug is dead-lettered after 3 attempts; either way the UI keeps waiting | Phase 4 |
+| A dead-lettered `ToolInvocationRequested` or `ToolInvocationResulted` leaves its plan `running`, because nothing turns the missing step into `PlanFailed` | Phase 4 (step timeout) |
+| A poison message is dead-lettered once per consumer group that handles its type, so one bad message can produce several records (`consumer.group` tells them apart). There is no DLQ replay tool | Known design limit |
+| The unknown-error retry budget (3 attempts) is held in memory and resets when the process restarts. The Python RAG worker has no bounded retry: a failure other than poison crashes it uncommitted, and it is redelivered when it is started again | Known design limit |
+| A RAG result with no `value` (no price line found, even after the full-source fallback) makes `{{step_N.result}}` fall back to `context`, and `exchange` parses the first number in that text, which can be the wrong one (for example a model name). The fallback also takes the first price line in the top-ranked source, so an add-on line (MacBook AppleCare `$299`, Tesla FSD `$8,000`) wins if its chunk ranks above the headline chunk | Known design limit |
+| The LLM planner can pick the wrong `currencyCode` for a RAG price: "how much would an iPhone cost in Germany?" planned `exchange` from `ILS` to `EUR` for the USD price, so the answer is wrong even though `amount` is right | Planner prompt (out of scope) |
+| `PlanState` in LevelDB and `history.json` are not schema-validated, and the Python worker hardcodes the topic names | Known design limit |
 | `bun run stop` runs `pkill -f "bun run"` (`scripts/stop.ts`), which also kills unrelated `bun run` processes on the machine | Phase 4 |
 | Each service handles one message at a time (`consumer.run` sets no `partitionsConsumedConcurrently`, one instance per group), so 3 partitions give no parallelism today | Known design limit |
 | Orchestrator dispatches one step at a time; independent steps are not parallelised | Known design limit |
@@ -271,7 +277,7 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 | Trade-off | Detail |
 |---|---|
 | Eventual consistency | The web server consumes `conversation-events` and pushes updates over WebSocket — no synchronous request/response |
-| Debugging complexity | A single-step query produces 7 events (plus 2 per extra step) across 3 topics; the dead-letter queue is used only on failure. Correlate by `conversationId` |
+| Debugging complexity | A single-step query produces 7 events (plus 2 per extra step) across 3 topics; the dead-letter queue is used only for poison messages. Correlate by `conversationId` |
 | Operational overhead | 10 processes + Kafka (+ Ollama optionally) vs a single REST API |
 | Sequential execution | Orchestrator dispatches one step at a time — independent steps are not parallelised |
 
@@ -300,6 +306,7 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │   ├── docker-compose.yml             # Kafka (KRaft) + Ollama
 │   └── create-topics.sh               # create 4 topics × 3 partitions
 ├── scripts/
+│   ├── gen-schemas.ts                 # zod → shared/schemas/*.json (bun run schemas:gen / schemas:check)
 │   ├── start.ts                       # launch 10 background processes
 │   ├── stop.ts
 │   └── logs/services/                 # per-service log files
@@ -310,11 +317,11 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │   │   ├── orchestration/             # orchestrator.ts, aggregator.ts, answerSynthesizer.ts
 │   │   └── apps/                      # mathApp, weatherApp, exchangeApp, generalChatApp
 │   └── python/
-│       └── rag/                       # rag_retriever.py, index_kb.py
+│       └── rag/                       # rag_retriever.py, contracts.py, price.py, index_kb.py, tests
 ├── shared/
-│   ├── kafka/client.ts                # KafkaJS wrapper
+│   ├── kafka/                         # client.ts (KafkaJS wrapper, publish, subscribeAndRun), errors.ts, consume.ts (validate, classify, dead-letter), deadLetter.ts
 │   ├── llm/openai.ts                  # callLLM (Ollama / OpenAI)
-│   ├── schemas/                       # TypeScript event interfaces + JSON Schema files (8 event types)
+│   ├── schemas/                       # zod contracts (9 messages), generated JSON Schema, registry, test fixtures
 │   ├── prompts/                       # LLM prompt functions
 │   ├── state/                         # planStore.ts (LevelDB plans), historyStore.ts (history.json)
 │   └── topics.ts                      # topic name constants
