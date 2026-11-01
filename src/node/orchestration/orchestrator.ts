@@ -6,161 +6,64 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
-import type { ToolInvocationRequested } from "../../../shared/schemas/ToolInvocationRequested";
-import type { ToolInvocationResulted } from "../../../shared/schemas/ToolInvocationResulted";
-import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
-import type { PlanFailed } from "../../../shared/schemas/PlanFailed";
-import {
-  initializeStore,
-  getPlan,
-  savePlan,
-  updatePlan,
-  deletePlan,
-} from "../../../shared/state/planStore";
-import { resolvePlaceholders } from "./planTransition";
+import { initializeStore, getPlan, savePlan } from "../../../shared/state/planStore";
+import { transition, type OrchestratorInput } from "./planTransition";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function dispatchStep(
+// INVARIANT: emit-before-persist is correct only because every event for a
+// conversation is keyed by conversationId (→ one partition of conversation-events)
+// and kafkajs handles a partition serially (partitionsConsumedConcurrently = 1).
+// A redelivered message is therefore always re-handled before any later event for
+// the same conversation, against the same persisted state. Do not raise
+// concurrency per partition, or key these events by anything else, without
+// revisiting this.
+async function handle(
   producer: Awaited<ReturnType<typeof createProducer>>,
-  conversationId: string,
-  step: PlanStep,
-  stepIndex: number,
-  accumulatedResults: Record<string, unknown>[]
+  event: OrchestratorInput
 ): Promise<void> {
-  const resolvedArgs = resolvePlaceholders(step.args, accumulatedResults);
+  const { conversationId } = event;
 
-  const event: ToolInvocationRequested = {
-    conversationId,
-    timestamp: Date.now(),
-    eventType: "ToolInvocationRequested",
-    payload: { toolName: step.tool, stepIndex, input: resolvedArgs },
-  };
+  const state = await getPlan(conversationId); // throws on I/O error → redelivery
+  const { state: next, emit, decision } = transition(state, event, Date.now());
 
-  await sendMessage(producer, TOPICS.TOOL_INVOCATION_REQUESTS, conversationId, event);
-  console.log(`[orchestrator] conversationId=${conversationId} dispatching tool="${step.tool}"`);
-}
-
-async function emitPlanFailed(
-  producer: Awaited<ReturnType<typeof createProducer>>,
-  conversationId: string,
-  reason: string,
-  failedTool: string,
-  completedResults: Record<string, unknown>[]
-): Promise<void> {
-  const now = Date.now();
-
-  const planFailed: PlanFailed = {
-    conversationId,
-    timestamp: now,
-    eventType: "PlanFailed",
-    payload: { reason, failedTool, completedResults },
-  };
-  await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planFailed);
-
-  await sendMessage(producer, TOPICS.DEAD_LETTER_QUEUE, conversationId, {
-    conversationId,
-    timestamp: now,
-    source: "orchestrator",
-    reason,
-    failedTool,
-  });
-
-  console.log(`[orchestrator] conversationId=${conversationId} plan FAILED reason=${reason}`);
-  console.log(`[orchestrator] conversationId=${conversationId} dead-letter published`);
-}
-
-// ─── Handlers ─────────────────────────────────────────────────────────────────
-
-async function onPlanGenerated(
-  producer: Awaited<ReturnType<typeof createProducer>>,
-  event: PlanGenerated
-): Promise<void> {
-  const { conversationId, payload } = event;
-  const { steps } = payload;
-
-  await savePlan(conversationId, {
-    plan: steps,
-    stepIndex: 0,
-    results: [],
-    status: "running",
-    planReceivedAt: Date.now(),
-    sessionId: event.sessionId,
-  });
-
-  console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.map(s => s.tool).join(", ")}]`);
-
-  try {
-    await dispatchStep(producer, conversationId, steps[0], 0, []);
-    await updatePlan(conversationId, { status: "running" });
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    await updatePlan(conversationId, { status: "failed" });
-    await emitPlanFailed(producer, conversationId, reason, steps[0].tool, []);
-    await deletePlan(conversationId);
-  }
-}
-
-async function onToolInvocationResulted(
-  producer: Awaited<ReturnType<typeof createProducer>>,
-  event: ToolInvocationResulted
-): Promise<void> {
-  const { conversationId, payload } = event;
-  const state = await getPlan(conversationId);
-
-  if (!state) {
-    console.warn(`[orchestrator] Received result for unknown conversationId=${conversationId}, skipping.`);
-    return;
+  if (decision.kind === "ignored") {
+    const log = decision.reason === "future-step" ? console.error : console.log;
+    log(
+      `[orchestrator] conversationId=${conversationId} ignored reason=${decision.reason} ${decision.detail}`
+    );
+    return; // no write, no emit
   }
 
-  const resultPayload = payload.result as { error?: string } | undefined;
-  if (resultPayload && typeof resultPayload.error === "string") {
-    const reason = resultPayload.error;
-    const completedResults = [...state.results];
-    await updatePlan(conversationId, { status: "failed" });
-    await emitPlanFailed(producer, conversationId, reason, payload.toolName, completedResults);
-    await deletePlan(conversationId);
-    return;
+  // 1. emit (acks=-1; a failed send throws → kafkajs redelivers, nothing persisted yet)
+  for (const m of emit) {
+    await sendMessage(producer, m.topic, m.key, m.value);
   }
 
-  const updatedResults = [...state.results, { toolName: payload.toolName, result: payload.result }];
-  const updatedStepIndex = state.stepIndex + 1;
+  // 2. persist (sync, throws)
+  await savePlan(conversationId, next!);
 
-  await updatePlan(conversationId, { results: updatedResults, stepIndex: updatedStepIndex });
-
-  console.log(`[orchestrator] conversationId=${conversationId} step ${updatedStepIndex}/${state.plan.length} completed tool="${payload.toolName}"`);
-
-  if (updatedStepIndex < state.plan.length) {
-    try {
-      await dispatchStep(producer, conversationId, state.plan[updatedStepIndex], updatedStepIndex, updatedResults);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      const nextTool = state.plan[updatedStepIndex].tool;
-      await updatePlan(conversationId, { status: "failed" });
-      await emitPlanFailed(producer, conversationId, reason, nextTool, updatedResults);
-      await deletePlan(conversationId);
+  // 3. return → kafkajs resolves the offset; it is committed at the end of the batch
+  switch (decision.kind) {
+    case "started":
+      console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${next!.plan.map(s => s.tool).join(", ")}]`);
+      console.log(`[orchestrator] conversationId=${conversationId} dispatching tool="${next!.plan[0].tool}"`);
+      break;
+    case "advanced": {
+      const done = decision.completedStep + 1;
+      console.log(`[orchestrator] conversationId=${conversationId} step ${done}/${next!.plan.length} completed tool="${next!.plan[decision.completedStep].tool}"`);
+      console.log(`[orchestrator] conversationId=${conversationId} dispatching tool="${next!.plan[next!.stepIndex].tool}"`);
+      break;
     }
-    return;
+    case "completed": {
+      const workerLatency = Date.now() - next!.planReceivedAt;
+      console.log(`[orchestrator] conversationId=${conversationId} plan completed, results=${next!.results.length}`);
+      console.log(`[Benchmark] conversationId=${conversationId} workerLatency=${workerLatency}ms`);
+      break;
+    }
+    case "failed":
+      console.log(`[orchestrator] conversationId=${conversationId} plan FAILED reason=${decision.reason}`);
+      console.log(`[orchestrator] conversationId=${conversationId} dead-letter published`);
+      break;
   }
-
-  await updatePlan(conversationId, { status: "completed" });
-
-  const planCompleted: PlanCompleted = {
-    conversationId,
-    sessionId: state.sessionId,
-    timestamp: Date.now(),
-    eventType: "PlanCompleted",
-    payload: { results: updatedResults },
-  };
-
-  await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planCompleted);
-
-  const workerLatency = Date.now() - state.planReceivedAt;
-  console.log(`[orchestrator] conversationId=${conversationId} plan completed, results=${updatedResults.length}`);
-  console.log(`[Benchmark] conversationId=${conversationId} workerLatency=${workerLatency}ms`);
-
-  await deletePlan(conversationId);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -181,10 +84,8 @@ await subscribeAndRun(
 
     switch (event.eventType) {
       case "PlanGenerated":
-        await onPlanGenerated(producer, event as PlanGenerated);
-        break;
       case "ToolInvocationResulted":
-        await onToolInvocationResulted(producer, event as ToolInvocationResulted);
+        await handle(producer, event as OrchestratorInput);
         break;
       default:
         break;

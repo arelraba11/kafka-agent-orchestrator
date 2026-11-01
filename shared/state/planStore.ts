@@ -36,38 +36,22 @@ export async function closeStore(): Promise<void> {
 export async function getPlan(conversationId: string): Promise<PlanState | null> {
   try {
     const raw = await db.get(conversationId);
+    // level 10 / abstract-level 3 returns undefined for a missing key instead of
+    // throwing LEVEL_NOT_FOUND.
+    if (raw === undefined) return null;
     return JSON.parse(raw) as PlanState;
   } catch (err: any) {
     if (err.code === "LEVEL_NOT_FOUND") return null;
     console.error(`[planStore] getPlan error | conversationId=${conversationId}`, err);
-    return null;
+    throw err;
   }
 }
 
 export async function savePlan(conversationId: string, state: PlanState): Promise<void> {
   try {
-    await db.put(conversationId, JSON.stringify(state));
+    await db.put(conversationId, JSON.stringify(state), { sync: true });
   } catch (err) {
     console.error(`[planStore] savePlan error | conversationId=${conversationId}`, err);
-  }
-}
-
-export async function updatePlan(
-  conversationId: string,
-  partial: Partial<PlanState>
-): Promise<void> {
-  const existing = await getPlan(conversationId);
-  if (!existing) {
-    console.error(`[planStore] updatePlan: no state found | conversationId=${conversationId}`);
-    return;
-  }
-  await savePlan(conversationId, { ...existing, ...partial });
-}
-
-export async function deletePlan(conversationId: string): Promise<void> {
-  try {
-    await db.del(conversationId);
-  } catch (err) {
-    console.error(`[planStore] deletePlan error | conversationId=${conversationId}`, err);
+    throw err;
   }
 }
