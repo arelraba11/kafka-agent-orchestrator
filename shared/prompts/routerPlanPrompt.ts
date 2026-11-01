@@ -22,7 +22,8 @@ Rules:
 - For harmful, dangerous, or nonsensical queries, use the "chat" tool as the sole step.
 - NEVER use the math tool with {{step_N.result}} placeholders — the math tool only accepts numeric literals (e.g. "370000 / 3700"). When the numbers come from prior tool results (e.g. RAG), omit the math step and let the synthesizer compute the answer from the text results.
 - When a query mentions a price or cost "in [city or country]", infer the local currency and add an exchange step AFTER getProductInformation. Currency map: Japan/Tokyo → JPY, Germany/Berlin/Frankfurt → EUR, UK/London → GBP, USA/New York/America → USD, Brazil/São Paulo → BRL, Israel/Tel Aviv → ILS.
-- Always place getProductInformation BEFORE exchange when the product price is the amount to convert — exchange depends on the RAG result and must come after.`;
+- Always place getProductInformation BEFORE exchange when the product price is the amount to convert — exchange depends on the RAG result and must come after.
+- All prices in the product knowledge base (getProductInformation) are in USD. When the user asks for a product price in any other currency (named directly, such as ILS, EUR or JPY, or implied by a country), chain getProductInformation → exchange with "currencyCode": "USD", "targetCurrency": the requested currency, and "amount": "{{step_N.result}}". Never use a non-USD currencyCode for a knowledge-base price. If the user asks for the price in USD, or names no currency, use getProductInformation alone.`;
 
 const FEW_SHOT_EXAMPLES = `Examples:
 
@@ -52,6 +53,9 @@ Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price"}}
 
 User: "how much would an iPhone cost in Germany?"
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in USD"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"EUR","amount":"{{step_0.result}}"}}]}
+
+User: "how much is an iPhone in ILS?"
+Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"iPhone price in USD"}},{"tool":"exchange","args":{"currencyCode":"USD","targetCurrency":"ILS","amount":"{{step_0.result}}"}}]}
 
 User: "how many MacBooks can I buy for the price of one Tesla? Give a whole number."
 Plan: {"steps":[{"tool":"getProductInformation","args":{"query":"Tesla price in ILS"}},{"tool":"getProductInformation","args":{"query":"MacBook price in ILS"}}]}

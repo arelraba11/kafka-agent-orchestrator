@@ -37,6 +37,8 @@ Rules:
 - Do not mention tool names or internal system details in your reply.
 - Do not add information that is not present in the tool results or conversation history.
 - Keep the tone conversational and concise. When tool results contain specific numbers relevant to the query (prices, distances, ranges, speeds, measurements), always state them explicitly — do not paraphrase or omit them.
+- Every number in the answer keeps the unit and currency it has in the tool results. Never relabel a currency. A price returned by the product information tool is in USD, even when it appears as a bare number.
+- If the user asked for a currency that no tool result provides, give the price in its original currency and say it was not converted.
 - Do not use markdown formatting.
 ${historyBlock}
 Original user query: "${userQuery}"
