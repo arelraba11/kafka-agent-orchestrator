@@ -27,6 +27,7 @@ from sentence_transformers import SentenceTransformer
 
 import contracts
 from price import price_with_fallback
+from source_match import prefer_product_match
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -241,7 +242,9 @@ def run() -> None:
         result: dict
         try:
             t_start = time.time()
-            chunks = retrieve(model, collection, query)
+            # Embedding rank first, then the product named in the query goes first: a longer
+            # sibling ("galaxy_s25_ultra") must not outrank the exact name ("Galaxy S25").
+            chunks = prefer_product_match(query, retrieve(model, collection, query))
             latency_ms = round((time.time() - t_start) * 1000, 1)
 
             if chunks:

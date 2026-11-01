@@ -245,7 +245,6 @@ Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
 | Orchestrator dispatches one step at a time; independent steps are not parallelised | Known design limit |
 | Weather and exchange-rate data are stubbed (11 cities, static rates) | Known design limit |
 | The regex fallback planner (`PRODUCT_REGEX`) only knows iphone, macbook, tesla, model 3/s/x/y, cybertruck and generic words (product, laptop, phone, ...). It has no rule for iPad, Honda or the newer products (Galaxy S25, Sony WH-1000XM5, PlayStation 5 Pro, Nintendo Switch 2, Toyota Camry); the LLM planner lists them in its prompt and does not depend on the regex | Known design limit |
-| Retrieval is plain similarity search over chunks, with no product filter, so an ambiguous query can rank the wrong product first and return its price. On the live index, `Galaxy S25 price` ranks `galaxy_s25_ultra` first (value `1299.99`), while `Galaxy S25 Ultra price` ranks it first correctly. The price rule then reads the price of whichever source ranks first | Known design limit |
 
 ---
 
