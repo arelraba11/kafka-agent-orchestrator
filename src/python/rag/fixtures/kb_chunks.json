@@ -1,4 +1,58 @@
 {
+  "galaxy_s25": [
+    {
+      "id": "galaxy_s25_chunk_0",
+      "source": "galaxy_s25",
+      "content": "Samsung Galaxy S25\n\nSamsung Galaxy S25:\nPrice: $799.99 (128GB, US launch)\nStorage: 128GB / 256GB, no microSD card slot\nDisplay: 6.2-inch Dynamic LTPO AMOLED 2X, 120Hz, FHD+ (1080×2340)\nProcessor: Snapdragon 8 Elite for Galaxy, 12GB RAM\nAnnounced: January 22, 2025\n\nCameras:\nRear: 50MP wide-angle, 12MP ultra wide, 10MP telephoto with 3x optical zoom\nFront: 12MP selfie camera"
+    },
+    {
+      "id": "galaxy_s25_chunk_1",
+      "source": "galaxy_s25",
+      "content": "Battery and Charging:\nBattery: 4000mAh, up to 29 hours of video playback (Samsung)\nWired charging: 25W\nWireless charging: 15W (Qi2 Ready)\n\nBuild and Software:\nFrame: Armor Aluminum, Corning Gorilla Glass Victus 2 display\nWater and dust resistance: IP68\nWeight: 162 g\nSoftware: Android 15 with One UI 7"
+    },
+    {
+      "id": "galaxy_s25_chunk_2",
+      "source": "galaxy_s25",
+      "content": "How It Differs from the Galaxy S25 Ultra:\nThe Galaxy S25 is the compact, standard model: a 6.2-inch display, a 4000mAh battery and an aluminum frame. It has no S Pen and no 200MP camera, which are found on the larger Galaxy S25 Ultra."
+    },
+    {
+      "id": "galaxy_s25_chunk_3",
+      "source": "galaxy_s25",
+      "content": "Common Questions:\nQ: How much memory does the Galaxy S25 have? A: 12GB of RAM, with 128GB or 256GB of storage.\nQ: Does it have an S Pen? A: No.\nQ: How fast does it charge? A: 25W wired and 15W wireless.\nQ: Is it water resistant? A: Yes, it is rated IP68."
+    }
+  ],
+  "galaxy_s25_ultra": [
+    {
+      "id": "galaxy_s25_ultra_chunk_0",
+      "source": "galaxy_s25_ultra",
+      "content": "Samsung Galaxy S25 Ultra"
+    },
+    {
+      "id": "galaxy_s25_ultra_chunk_1",
+      "source": "galaxy_s25_ultra",
+      "content": "Samsung Galaxy S25 Ultra: Price: $1,299.99 (256GB, US launch) Storage: 256GB / 512GB / 1TB, no microSD card slot Colors: Titanium Silverblue, Titanium Black, Titanium Gray, Titanium Whitesilver; Samsung.com-only: Titanium Jetblack, Titanium Jadegreen, Titanium Pinkgold Display: 6.9-inch Dynamic LTPO AMOLED 2X, 120Hz, 1440×3120 Processor: Snapdragon 8 Elite for Galaxy, 12GB RAM"
+    },
+    {
+      "id": "galaxy_s25_ultra_chunk_2",
+      "source": "galaxy_s25_ultra",
+      "content": "Announced: January 22, 2025\n\nCameras:\nRear: 200MP wide-angle, 50MP ultra wide, 50MP telephoto with 5x optical zoom, 10MP telephoto with 3x optical zoom\nFront: 12MP selfie camera\n\nBattery and Charging:\nBattery: 5000mAh, up to 31 hours of video playback (Samsung)\nWired charging: 45W\nWireless charging: 15W (Qi2 Ready)"
+    },
+    {
+      "id": "galaxy_s25_ultra_chunk_3",
+      "source": "galaxy_s25_ultra",
+      "content": "Build and Software:\nFrame: titanium, Corning Gorilla Armor 2 front glass\nWater and dust resistance: IP68\nWeight: 218 g\nSoftware: Android 15 with One UI 7\nS Pen: built in, slides out of the phone body"
+    },
+    {
+      "id": "galaxy_s25_ultra_chunk_4",
+      "source": "galaxy_s25_ultra",
+      "content": "How It Differs from the Galaxy S25:\nThe Galaxy S25 Ultra is the largest and most capable phone of the Galaxy S25 family: a 6.9-inch display, a 5000mAh battery, a 200MP main camera and a built-in S Pen. The standard Galaxy S25 is a smaller 6.2-inch phone without an S Pen."
+    },
+    {
+      "id": "galaxy_s25_ultra_chunk_5",
+      "source": "galaxy_s25_ultra",
+      "content": "Common Questions:\nQ: Does the Galaxy S25 Ultra have a microSD slot? A: No, storage is fixed at 256GB, 512GB or 1TB.\nQ: Does it support the S Pen? A: Yes, the S Pen is built in.\nQ: How fast does it charge? A: 45W wired and 15W wireless.\nQ: How many cameras are on the back? A: Four: 200MP wide, 50MP ultra wide, and 50MP 5x and 10MP 3x telephoto."
+    }
+  ],
   "honda": [
     {
       "id": "honda_chunk_0",
@@ -24,6 +78,16 @@
       "id": "honda_chunk_4",
       "source": "honda",
       "content": "Honda Financing & Service:\nHonda Financial Services: Financing from 0.9% APR (well-qualified buyers), lease options available\nHonda Care (Extended Warranty): Available up to 8 years / 120,000 miles\nMaintenance Minder: Oil life monitoring system, standard on all models\nRoadside Assistance: 3-year / 36,000-mile roadside assistance included with new vehicle purchase"
+    },
+    {
+      "id": "honda_chunk_5",
+      "source": "honda",
+      "content": "Performance Trims:\nCivic Si: sedan only, 1.5L turbo, 200 hp and 192 lb-ft, 6-speed manual only\nCivic Type R: hatchback only, 2.0L turbo, 315 hp and 310 lb-ft, 6-speed manual only\nCivic LX: 2.0L 4-cylinder, 158 hp and 138 lb-ft, CVT"
+    },
+    {
+      "id": "honda_chunk_6",
+      "source": "honda",
+      "content": "Common Questions:\nQ: Which Civic trims come with a manual transmission? A: The Si and the Type R, both 6-speed manual only.\nQ: Does the Civic come as a hatchback? A: Yes, the LX is offered as a sedan or hatchback, and the Type R is a hatchback.\nQ: Does every Civic have Honda Sensing? A: Yes, it is standard on all trims.\nQ: How long is the powertrain warranty? A: 5 years or 60,000 miles."
     }
   ],
   "ipad": [
@@ -41,6 +105,16 @@
       "id": "ipad_chunk_2",
       "source": "ipad",
       "content": "Features: Face ID, Apple Pencil Pro support, Magic Keyboard support, Thunderbolt 4 USB-C Battery: Up to 10 hours Connectivity: Wi-Fi 6E, optional 5G, Bluetooth 5.3\n\nAppleCare+ for iPad:\nPrice: $99/year\nCoverage: Two incidents of accidental damage, express replacement"
+    },
+    {
+      "id": "ipad_chunk_3",
+      "source": "ipad",
+      "content": "Key Specs and Variants:\nThickness: 5.1 mm\nWeight: about 579 grams (Wi-Fi model)\nAnnounced: May 7, 2024, released May 15, 2024\nVariants: 256GB, 512GB, 1TB and 2TB storage, Wi-Fi or Wi-Fi + Cellular, in Silver or Space Black\nNano-texture glass: optional on the 1TB and 2TB models"
+    },
+    {
+      "id": "ipad_chunk_4",
+      "source": "ipad",
+      "content": "Common Questions:\nQ: Which chip does the iPad Pro use? A: The M4 chip.\nQ: Does the iPad Pro support the Apple Pencil Pro? A: Yes, and it also works with the Magic Keyboard.\nQ: Is cellular built in? A: Only on the Wi-Fi + Cellular model, which adds optional 5G.\nQ: What does AppleCare+ for iPad cover? A: Two incidents of accidental damage and express replacement."
     }
   ],
   "iphone": [
@@ -63,6 +137,21 @@
       "id": "iphone_chunk_3",
       "source": "iphone",
       "content": "Accessories:\nMagSafe Charger: $39\nUSB-C to MagSafe 3 Cable: $49\nApple iPhone Case with MagSafe: $49–$59\nAirTag (for Find My): $29 each, 4-pack $99\nLightning to USB-C Adapter: $29"
+    },
+    {
+      "id": "iphone_chunk_4",
+      "source": "iphone",
+      "content": "Key Specs and Variants:\nDisplay: 6.9-inch Super Retina XDR OLED, 2868×1320 resolution at 460 ppi\nChip: A18 Pro\nWeight: 227 grams\nAnnounced: September 9, 2024, released September 20, 2024\nVariants: 256GB, 512GB and 1TB storage, in Black Titanium, White Titanium, Natural Titanium and Desert Titanium"
+    },
+    {
+      "id": "iphone_chunk_5",
+      "source": "iphone",
+      "content": "Common Questions: Q: Which chip does the iPhone 16 Pro Max use? A: The A18 Pro chip. Q: How does the iPhone 16 Pro Max charge? A: Over USB-C with fast charging, or wirelessly with MagSafe. Q: Which wireless standards does it support? A: 5G, Wi-Fi 7, Bluetooth 5.3 and Ultra Wideband."
+    },
+    {
+      "id": "iphone_chunk_6",
+      "source": "iphone",
+      "content": "Q: What does AppleCare+ cover? A: Unlimited accidental damage repairs, express replacement service and 24/7 priority support."
     }
   ],
   "macbook": [
@@ -84,7 +173,78 @@
     {
       "id": "macbook_chunk_3",
       "source": "macbook",
-      "content": "Accessories:\nApple USB-C to MagSafe 3 Cable: $49\n140W USB-C Power Adapter: $79\nApple Pro Display XDR: $4,999\nMagic Mouse: $79\nMagic Trackpad: $129\nMagic Keyboard with Touch ID: $99"
+      "content": "Accessories:\nApple USB-C to MagSafe 3 Cable: $49\n140W USB-C Power Adapter: $79\nApple Pro Display XDR: $4,999\nMagic Mouse: $79\nMagic Trackpad: $129\nMagic Keyboard with Touch ID: $99\n\nKey Specs and Launch:\nAnnounced: October 30, 2024, on sale November 8, 2024\nThunderbolt 5: on the M4 Pro and M4 Max models\nM4 Max: configurable up to a 16-core CPU and 40-core GPU, with up to 128GB of unified memory"
+    },
+    {
+      "id": "macbook_chunk_4",
+      "source": "macbook",
+      "content": "Common Questions:\nQ: How many Thunderbolt ports does the MacBook Pro 16-inch have? A: Three Thunderbolt 5 ports, plus HDMI 2.1, an SDXC card slot and MagSafe 3.\nQ: How much memory can it have? A: Up to 128GB of unified memory.\nQ: Does it have a headphone jack? A: Yes, a 3.5mm headphone jack.\nQ: How does it charge? A: Through MagSafe 3 or USB-C, with 140W fast charging."
+    }
+  ],
+  "ps5_pro": [
+    {
+      "id": "ps5_pro_chunk_0",
+      "source": "ps5_pro",
+      "content": "PlayStation 5 Pro\n\nSony PlayStation 5 Pro:\nPrice: $699.99 (US launch, digital-only console)\nStorage: 2TB SSD\nDisc drive: not included; optional Disc Drive sold separately\nIncluded: DualSense wireless controller, Astro's Playroom pre-installed\nAnnounced: September 10, 2024, pre-orders from September 26, 2024\nReleased: November 7, 2024"
+    },
+    {
+      "id": "ps5_pro_chunk_1",
+      "source": "ps5_pro",
+      "content": "Performance:\nGPU: Sony quoted 67% more compute units than the PS5, 28% faster memory and up to 45% faster rendering\nUpscaling: PlayStation Spectral Super Resolution (PSSR), AI-based\nDisplay output: variable refresh rate (VRR), up to 8K output\nWi-Fi: Wi-Fi 7 where available"
+    },
+    {
+      "id": "ps5_pro_chunk_2",
+      "source": "ps5_pro",
+      "content": "Add-ons and Comparison:\nDisc Drive (sold separately): $79.99\nStandard PS5 at the time of the PS5 Pro launch: $499.99, or $449.99 for the Digital Edition"
+    },
+    {
+      "id": "ps5_pro_chunk_3",
+      "source": "ps5_pro",
+      "content": "Common Questions:\nQ: Does the PS5 Pro have a disc drive? A: Not built in, the optional Disc Drive is sold separately.\nQ: How much storage does it have? A: 2TB of SSD storage.\nQ: What is PSSR? A: PlayStation Spectral Super Resolution, an AI-based upscaling feature.\nQ: Does it support Wi-Fi 7? A: Yes, where a compatible router is available."
+    }
+  ],
+  "sony_wh1000xm5": [
+    {
+      "id": "sony_wh1000xm5_chunk_0",
+      "source": "sony_wh1000xm5",
+      "content": "Sony WH-1000XM5\n\nSony WH-1000XM5 Wireless Noise Cancelling Headphones:\nPrice: $399.99 (US launch)\nColors: Black, Platinum Silver\nNoise Cancelling: Integrated Processor V1 and HD Noise Cancelling Processor QN1, eight microphones\nBattery: Up to 30 hours with noise cancelling on\nDriver: 30mm\nWeight: about 250 grams\nAnnounced: May 12, 2022, shipping from May 20, 2022"
+    },
+    {
+      "id": "sony_wh1000xm5_chunk_1",
+      "source": "sony_wh1000xm5",
+      "content": "Connectivity and Features:\nMultipoint connection: pair with two devices at once\nCall quality: beamforming microphones"
+    },
+    {
+      "id": "sony_wh1000xm5_chunk_2",
+      "source": "sony_wh1000xm5",
+      "content": "Common Questions:\nQ: How long does the battery last? A: Up to 30 hours with noise cancelling on.\nQ: How many microphones does it have? A: Eight, used for noise cancelling and calls.\nQ: Which processors handle noise cancelling? A: The Integrated Processor V1 and the HD Noise Cancelling Processor QN1.\nQ: Can it connect to two devices at the same time? A: Yes, it supports multipoint connection."
+    }
+  ],
+  "switch_2": [
+    {
+      "id": "switch_2_chunk_0",
+      "source": "switch_2",
+      "content": "Nintendo Switch 2\n\nNintendo Switch 2:\nPrice: $449.99 (console only, US launch)\nStorage: 256GB (UFS)\nDisplay: 7.9-inch wide color gamut LCD, 1920×1080, HDR10, variable refresh rate up to 120Hz\nProcessor: custom processor made by NVIDIA\nReleased: June 5, 2025"
+    },
+    {
+      "id": "switch_2_chunk_1",
+      "source": "switch_2",
+      "content": "Display Output and Performance:\nTV mode: up to 3840×2160 (4K) at 60fps, up to 120fps at 1080p or 1440p\nHandheld and tabletop mode: up to 1920×1080\nWi-Fi: Wi-Fi 6"
+    },
+    {
+      "id": "switch_2_chunk_2",
+      "source": "switch_2",
+      "content": "Battery and Controllers:\nBattery: 5220mAh lithium-ion, about 2 to 6.5 hours depending on the game\nCharging time: about 3 hours\nJoy-Con 2: each has a mouse sensor, plus an accelerometer and gyroscope\nStorage expansion: microSD Express cards only, up to 2TB\n\nWeight:\nConsole: about 0.88 lb, about 1.18 lb with Joy-Con 2 attached"
+    },
+    {
+      "id": "switch_2_chunk_3",
+      "source": "switch_2",
+      "content": "Bundles and Compatibility:\nNintendo Switch 2 and Mario Kart World Bundle at launch: $499.99\nBoth Nintendo Switch 2 and Nintendo Switch game cards can be inserted into the console."
+    },
+    {
+      "id": "switch_2_chunk_4",
+      "source": "switch_2",
+      "content": "Common Questions:\nQ: How much storage does the Switch 2 have? A: 256GB of built-in storage, expandable with microSD Express cards up to 2TB.\nQ: Does it play in 4K? A: Yes, on a TV in TV mode, up to 4K at 60fps.\nQ: How long does the battery last? A: About 2 to 6.5 hours, depending on the game.\nQ: Do regular microSD cards work? A: Only for copying screenshots and videos, games need microSD Express."
     }
   ],
   "tesla": [
@@ -112,6 +272,33 @@
       "id": "tesla_chunk_4",
       "source": "tesla",
       "content": "Tesla Charging Solutions\nHome Wall Connector: $400 + installation, up to 44 miles per hour of charge\nSupercharger Network: 50,000+ Superchargers globally, pay per kWh\nMobile Connector: Included with new vehicles, J1772 adapter included"
+    },
+    {
+      "id": "tesla_chunk_5",
+      "source": "tesla",
+      "content": "Performance and Warranty:\nModel S Plaid: 1,020 hp, 0–60 mph in 1.99 seconds (Tesla's figure)\nBasic warranty: 4 years or 50,000 miles, whichever comes first\nBattery and drive unit warranty: 8 years or 150,000 miles, whichever comes first"
+    },
+    {
+      "id": "tesla_chunk_6",
+      "source": "tesla",
+      "content": "Common Questions:\nQ: Which Model S variant is faster? A: The Model S Plaid, with 1,020 hp and 0–60 mph in 1.99 seconds.\nQ: Which Model S variant has the longest range? A: The Model S Long Range, up to 405 miles EPA range.\nQ: How long is the battery and drive unit warranty? A: 8 years or 150,000 miles.\nQ: Is Full Self-Driving fully autonomous? A: No, it requires driver supervision."
+    }
+  ],
+  "toyota_camry": [
+    {
+      "id": "toyota_camry_chunk_0",
+      "source": "toyota_camry",
+      "content": "Toyota Vehicle\n\nToyota Camry (2025):\nBase Price: $28,400 (LE hybrid, before the $1,095 destination fee)\nTrims: LE, SE, XLE, XSE\nPowertrain: 2.5L four-cylinder hybrid, hybrid-only lineup for 2025\nDrive: front-wheel drive standard, all-wheel drive optional on every trim\nFuel Economy: 51 mpg combined (Toyota estimate, LE front-wheel drive)\nSeating: five\nCargo: 15.1 cubic feet"
+    },
+    {
+      "id": "toyota_camry_chunk_1",
+      "source": "toyota_camry",
+      "content": "Pricing Notes:\nThe LE with the $1,095 destination fee comes to $29,495.\nAll-wheel drive adds $1,525 on every trim.\n\nWarranty:\nBasic: 3-year / 36,000-mile"
+    },
+    {
+      "id": "toyota_camry_chunk_2",
+      "source": "toyota_camry",
+      "content": "Common Questions:\nQ: Is the 2025 Camry a hybrid? A: Yes, every 2025 Camry is a hybrid.\nQ: Does the 2025 Camry offer all-wheel drive? A: Yes, as a $1,525 option on all trims.\nQ: How many trims are there? A: Four: LE, SE, XLE and XSE.\nQ: Does the starting figure include destination? A: No, the $28,400 base excludes the $1,095 destination fee."
     }
   ]
 }

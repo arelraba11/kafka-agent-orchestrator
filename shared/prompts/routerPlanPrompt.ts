@@ -11,7 +11,7 @@ Available tools:
 - exchange      args: { "currencyCode": string, "targetCurrency": string, "amount": number }
 - math          args: { "expression": string }  — only arithmetic expressions with digits and operators
 - chat          args: { "userInput": string }   — general questions, safety/guardrail queries, or queries that don't match another tool
-- getProductInformation  args: { "query": string }  — product or tech questions about iPhone, iPad, MacBook, Tesla, or Honda
+- getProductInformation  args: { "query": string }  — product or tech questions about iPhone, iPad, MacBook, Tesla, Honda, Toyota Camry, Samsung Galaxy S25 and S25 Ultra, Sony WH-1000XM5, PlayStation 5 Pro, or Nintendo Switch 2
 
 Rules:
 - Respond with ONLY a valid JSON object. No markdown, no explanation, no extra text.

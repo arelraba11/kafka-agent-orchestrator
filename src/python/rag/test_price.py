@@ -18,6 +18,25 @@ import price
 KB = json.loads(Path(__file__).resolve().parent.joinpath("fixtures", "kb_chunks.json").read_text(encoding="utf-8"))
 
 
+# Headline price (digits only) of every product in data/products/, and the one place it is listed.
+# Launch MSRP in USD, except the existing five files, whose headline prices are sample data.
+EXPECTED = {
+    "iphone": "1199",
+    "ipad": "1299",
+    "macbook": "2000",
+    "tesla": "74990",
+    "honda": "24000",
+    "galaxy_s25_ultra": "1299.99",
+    "galaxy_s25": "799.99",
+    "sony_wh1000xm5": "399.99",
+    "ps5_pro": "699.99",
+    "switch_2": "449.99",
+    "toyota_camry": "28400",
+}
+# Products added with the "Price: only in the headline line" rule (the older files keep AppleCare/FSD add-ons).
+HEADLINE_ONLY = ["galaxy_s25_ultra", "galaxy_s25", "sony_wh1000xm5", "ps5_pro", "switch_2", "toyota_camry"]
+
+
 def headline(source: str) -> dict:
     """The chunk that carries the product's headline price: the first one containing 'Price:'."""
     return next(c for c in KB[source] if "Price:" in c["content"])
@@ -29,8 +48,7 @@ def chunk(source: str, n: int, content: str) -> dict:
 
 class ExtractPrice(unittest.TestCase):
     def test_headline_chunk_of_every_product(self):
-        expected = {"iphone": "1199", "ipad": "1299", "macbook": "2000", "tesla": "74990", "honda": "24000"}
-        for name, want in expected.items():
+        for name, want in EXPECTED.items():
             with self.subTest(product=name):
                 self.assertEqual(price.extract_price([headline(name)]), want)
 
@@ -43,9 +61,23 @@ class ExtractPrice(unittest.TestCase):
 
     def test_first_chunk_with_a_price_wins_over_every_add_on(self):
         """AppleCare ($199/year, $299) and FSD ($8,000) lose when the headline chunk comes first."""
-        for name, want in {"iphone": "1199", "ipad": "1299", "macbook": "2000", "tesla": "74990", "honda": "24000"}.items():
+        for name, want in EXPECTED.items():
             with self.subTest(product=name):
                 self.assertEqual(price.extract_price(KB[name]), want)
+
+    def test_every_data_file_has_a_fixture_and_an_expected_price(self):
+        """The fixture and EXPECTED cover exactly the files in data/products/."""
+        files = sorted(p.stem for p in Path(__file__).resolve().parents[3].joinpath("data", "products").glob("*.txt"))
+        self.assertEqual(sorted(KB), files)
+        self.assertEqual(sorted(EXPECTED), files)
+
+    def test_headline_price_is_the_only_price_line_in_the_newer_products(self):
+        """Add-ons in the newer files carry no 'Price:' label, so no other chunk can win the rule."""
+        for name in HEADLINE_ONLY:
+            with self.subTest(product=name):
+                carrying = [c["id"] for c in KB[name] if "Price:" in c["content"]]
+                self.assertEqual(carrying, [headline(name)["id"]])
+                self.assertEqual(sum(c["content"].count("Price:") for c in KB[name]), 1)
 
     def test_accepts_chunk_dicts_and_plain_strings(self):
         self.assertEqual(price.extract_price([{"content": "Price: $5"}]), "5")
