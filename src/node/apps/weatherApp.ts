@@ -71,6 +71,7 @@ await subscribeAndRun(
         eventType: "ToolInvocationResulted",
         payload: {
           toolName: "weather",
+          stepIndex: req.payload.stepIndex,
           result: { value: resultStr, city, temp: data.temp, condition: data.condition, success: true },
         },
       };
@@ -86,6 +87,7 @@ await subscribeAndRun(
         eventType: "ToolInvocationResulted",
         payload: {
           toolName: "weather",
+          stepIndex: req.payload.stepIndex,
           result: { value: "", success: false, error: errorMsg },
         },
       };

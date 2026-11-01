@@ -74,6 +74,7 @@ def emit_result(
     producer: KafkaProducer,
     conversation_id: str,
     result: dict,
+    step_index,
 ) -> None:
     event = {
         "conversationId": conversation_id,
@@ -81,6 +82,7 @@ def emit_result(
         "eventType": "ToolInvocationResulted",
         "payload": {
             "toolName": TOOL_NAME,
+            "stepIndex": step_index,
             "result": result,
         },
     }
@@ -213,11 +215,11 @@ def run() -> None:
                 "success": True,
             }
 
-            emit_result(producer, conversation_id, result)
+            emit_result(producer, conversation_id, result, payload.get("stepIndex"))
         except Exception as exc:
             error_msg = str(exc)
             print(f"[rag_retriever] Error processing query: {error_msg}")
-            emit_result(producer, conversation_id, {"error": error_msg, "success": False})
+            emit_result(producer, conversation_id, {"error": error_msg, "success": False}, payload.get("stepIndex"))
 
 
 if __name__ == "__main__":

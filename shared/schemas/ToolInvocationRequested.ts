@@ -5,6 +5,7 @@
 
 export interface ToolInvocationRequestedPayload {
   toolName: string;
+  stepIndex: number; // index of the plan step this request executes
   input: Record<string, unknown>;
 }
 

@@ -5,6 +5,7 @@
 
 export interface ToolInvocationResultedPayload {
   toolName: string;
+  stepIndex: number; // echo of ToolInvocationRequested.payload.stepIndex
   result: Record<string, unknown>;
 }
 

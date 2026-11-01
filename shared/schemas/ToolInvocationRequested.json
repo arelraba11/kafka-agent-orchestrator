@@ -22,12 +22,17 @@
     },
     "payload": {
       "type": "object",
-      "required": ["toolName", "input"],
+      "required": ["toolName", "stepIndex", "input"],
       "additionalProperties": false,
       "properties": {
         "toolName": {
           "type": "string",
           "description": "Name of the tool to invoke (e.g. math, weather, exchangeRate, generalChat, getProductInformation)"
+        },
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index of the plan step this request executes; workers echo it in ToolInvocationResulted"
         },
         "input": {
           "type": "object",

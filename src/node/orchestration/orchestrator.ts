@@ -57,6 +57,7 @@ async function dispatchStep(
   producer: Awaited<ReturnType<typeof createProducer>>,
   conversationId: string,
   step: PlanStep,
+  stepIndex: number,
   accumulatedResults: Record<string, unknown>[]
 ): Promise<void> {
   const resolvedArgs = resolvePlaceholders(step.args, accumulatedResults);
@@ -65,7 +66,7 @@ async function dispatchStep(
     conversationId,
     timestamp: Date.now(),
     eventType: "ToolInvocationRequested",
-    payload: { toolName: step.tool, input: resolvedArgs },
+    payload: { toolName: step.tool, stepIndex, input: resolvedArgs },
   };
 
   await sendMessage(producer, TOPICS.TOOL_INVOCATION_REQUESTS, conversationId, event);
@@ -122,7 +123,7 @@ async function onPlanGenerated(
   console.log(`[orchestrator] conversationId=${conversationId} plan received steps=[${steps.map(s => s.tool).join(", ")}]`);
 
   try {
-    await dispatchStep(producer, conversationId, steps[0], []);
+    await dispatchStep(producer, conversationId, steps[0], 0, []);
     await updatePlan(conversationId, { status: "running" });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -163,7 +164,7 @@ async function onToolInvocationResulted(
 
   if (updatedStepIndex < state.plan.length) {
     try {
-      await dispatchStep(producer, conversationId, state.plan[updatedStepIndex], updatedResults);
+      await dispatchStep(producer, conversationId, state.plan[updatedStepIndex], updatedStepIndex, updatedResults);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       const nextTool = state.plan[updatedStepIndex].tool;

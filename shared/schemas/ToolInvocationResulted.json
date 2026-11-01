@@ -22,12 +22,17 @@
     },
     "payload": {
       "type": "object",
-      "required": ["toolName", "result"],
+      "required": ["toolName", "stepIndex", "result"],
       "additionalProperties": false,
       "properties": {
         "toolName": {
           "type": "string",
           "description": "Name of the tool that produced this result"
+        },
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Echo of ToolInvocationRequested.payload.stepIndex"
         },
         "result": {
           "type": "object",

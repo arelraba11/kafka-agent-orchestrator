@@ -118,6 +118,7 @@ await subscribeAndRun(
       eventType: "ToolInvocationResulted",
       payload: {
         toolName: "math",
+        stepIndex: req.payload.stepIndex,
         result: { value: resultValue, success, ...(errorMsg ? { error: errorMsg } : {}) },
       },
     };

@@ -89,6 +89,7 @@ await subscribeAndRun(
       eventType: "ToolInvocationResulted",
       payload: {
         toolName: "exchange",
+        stepIndex: req.payload.stepIndex,
         result: { value: resultStr, success, ...(errorMsg ? { error: errorMsg } : {}) },
       },
     };

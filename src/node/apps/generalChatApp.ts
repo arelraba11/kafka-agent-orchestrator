@@ -109,6 +109,7 @@ await subscribeAndRun(
         eventType: "ToolInvocationResulted",
         payload: {
           toolName: "chat",
+          stepIndex: req.payload.stepIndex,
           result: { value: resultStr, success: true },
         },
       };
@@ -124,6 +125,7 @@ await subscribeAndRun(
         eventType: "ToolInvocationResulted",
         payload: {
           toolName: "chat",
+          stepIndex: req.payload.stepIndex,
           result: { value: "", success: false, error: errorMsg },
         },
       };
