@@ -56,3 +56,4 @@ coverage/
 # ─── Claude Code (internal dev files) ────────────────────────────────────────
 .claude/
 CLAUDE.md
+BACKLOG.md
