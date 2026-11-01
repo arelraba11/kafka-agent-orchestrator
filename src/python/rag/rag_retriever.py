@@ -26,6 +26,7 @@ from kafka import KafkaConsumer, KafkaProducer
 from sentence_transformers import SentenceTransformer
 
 import contracts
+from price import price_with_fallback
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -160,6 +161,15 @@ def retrieve(
     return chunks
 
 
+def fetch_source_chunks(collection: chromadb.Collection, source: str) -> list[dict]:
+    """ALL chunks of one source document ({id, content}), for the price fallback."""
+    got = collection.get(where={"source": source}, include=["documents", "metadatas"])
+    return [
+        {"id": chunk_id, "content": doc}
+        for chunk_id, doc in zip(got.get("ids") or [], got.get("documents") or [])
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -257,6 +267,14 @@ def run() -> None:
                 "retrieval_latency_ms": latency_ms,
                 "success": True,
             }
+
+            # `value` is what a downstream {{step_N.result}} resolves to: the product
+            # price (digits only), present only when one was found. Without it the
+            # placeholder falls back to `context` and exchange parses the first number.
+            price = price_with_fallback(chunks, lambda src: fetch_source_chunks(collection, src))
+            if price is not None:
+                result["value"] = price
+                print(f"[rag_retriever] Price found: value={price}")
 
         except Exception as exc:
             error_msg = str(exc)

@@ -1,0 +1,117 @@
+{
+  "honda": [
+    {
+      "id": "honda_chunk_0",
+      "source": "honda",
+      "content": "Honda Vehicle"
+    },
+    {
+      "id": "honda_chunk_1",
+      "source": "honda",
+      "content": "Honda Civic: Base Price: $24,000 (Sedan LX) / $24,950 (Hatchback LX) Trims: LX, Sport, EX, EX-L, Sport Touring, Si, Type R Engine Options: - 2.0L 4-cylinder: 158 hp, 138 lb-ft torque (LX/Sport) - 1.5L turbocharged 4-cylinder: 192 hp, 192 lb-ft torque (EX and above) - Civic Si: 1.5L turbo, 200 hp, 6-speed manual only - Civic Type R: 2.0L VTEC Turbo, 315 hp, 6-speed manual, 0–60 in 5.4 sec"
+    },
+    {
+      "id": "honda_chunk_2",
+      "source": "honda",
+      "content": "Transmission: CVT standard; 6-speed manual on Si and Type R Fuel Economy: Up to 36 mpg city / 46 mpg highway (1.5T CVT) Safety: Honda Sensing suite standard on all trims (CMBS, LKAS, ACC, RDM) Infotainment: 7-inch or 9-inch Honda CONNECT touchscreen, Apple CarPlay / Android Auto wireless Colors: Sonic Gray Pearl, Aegean Blue, Rallye Red, Lunar Silver, Crystal Black, Boost Blue (Type R)"
+    },
+    {
+      "id": "honda_chunk_3",
+      "source": "honda",
+      "content": "Warranty: 3-year/36,000-mile basic, 5-year/60,000-mile powertrain"
+    },
+    {
+      "id": "honda_chunk_4",
+      "source": "honda",
+      "content": "Honda Financing & Service:\nHonda Financial Services: Financing from 0.9% APR (well-qualified buyers), lease options available\nHonda Care (Extended Warranty): Available up to 8 years / 120,000 miles\nMaintenance Minder: Oil life monitoring system, standard on all models\nRoadside Assistance: 3-year / 36,000-mile roadside assistance included with new vehicle purchase"
+    }
+  ],
+  "ipad": [
+    {
+      "id": "ipad_chunk_0",
+      "source": "ipad",
+      "content": "iPad Product"
+    },
+    {
+      "id": "ipad_chunk_1",
+      "source": "ipad",
+      "content": "iPad Pro: Price: $1,299 (Wi-Fi) / $1,499 (Wi-Fi + Cellular) Storage: 256GB / 512GB / 1TB / 2TB Colors: Silver, Space Black Display: 13-inch Ultra Retina XDR OLED tandem display, 120Hz ProMotion Processor: M4 chip with 10-core CPU and 10-core GPU Camera: 12MP wide rear, 12MP ultrawide, LiDAR Scanner, 12MP ultrawide front with Center Stage"
+    },
+    {
+      "id": "ipad_chunk_2",
+      "source": "ipad",
+      "content": "Features: Face ID, Apple Pencil Pro support, Magic Keyboard support, Thunderbolt 4 USB-C Battery: Up to 10 hours Connectivity: Wi-Fi 6E, optional 5G, Bluetooth 5.3\n\nAppleCare+ for iPad:\nPrice: $99/year\nCoverage: Two incidents of accidental damage, express replacement"
+    }
+  ],
+  "iphone": [
+    {
+      "id": "iphone_chunk_0",
+      "source": "iphone",
+      "content": "iPhone Product"
+    },
+    {
+      "id": "iphone_chunk_1",
+      "source": "iphone",
+      "content": "iPhone 16 Pro Max: Price: $1,199 Storage: 256GB / 512GB / 1TB Colors: Black Titanium, White Titanium, Natural Titanium, Desert Titanium Display: 6.9-inch Super Retina XDR OLED, ProMotion 120Hz, Always-On Display Processor: A18 Pro chip with 6-core CPU and 6-core GPU Camera: 48MP Fusion main, 12MP ultrawide, 5x optical zoom telephoto, 4K 120fps video"
+    },
+    {
+      "id": "iphone_chunk_2",
+      "source": "iphone",
+      "content": "Battery: Up to 33 hours video playback, USB-C fast charging Features: Face ID, Dynamic Island, Action Button, Camera Control button, MagSafe Connectivity: 5G, Wi-Fi 7, Bluetooth 5.3, Ultra Wideband OS: iOS 18\n\nAppleCare+ for iPhone:\nPrice: $199/year or $9.99/month\nCoverage: Unlimited accidental damage repairs ($29 screen, $99 other), express replacement service, 24/7 priority support"
+    },
+    {
+      "id": "iphone_chunk_3",
+      "source": "iphone",
+      "content": "Accessories:\nMagSafe Charger: $39\nUSB-C to MagSafe 3 Cable: $49\nApple iPhone Case with MagSafe: $49–$59\nAirTag (for Find My): $29 each, 4-pack $99\nLightning to USB-C Adapter: $29"
+    }
+  ],
+  "macbook": [
+    {
+      "id": "macbook_chunk_0",
+      "source": "macbook",
+      "content": "MacBook Product Catalog"
+    },
+    {
+      "id": "macbook_chunk_1",
+      "source": "macbook",
+      "content": "MacBook Pro 16-inch: Price: Starting at $2,000 Processor: M4 Max chip — 14-core CPU, 32-core GPU, 16-core Neural Engine Memory: 36GB / 48GB / 64GB / 96GB / 128GB unified memory Storage: 512GB / 1TB / 2TB / 4TB SSD Display: 16.2-inch Liquid Retina XDR, 3456×2234, ProMotion 120Hz, 1000 nits sustained / 1600 nits peak Battery: Up to 24 hours, 140W USB-C fast charge"
+    },
+    {
+      "id": "macbook_chunk_2",
+      "source": "macbook",
+      "content": "Ports: 3× Thunderbolt 5, HDMI 2.1, SDXC card slot, MagSafe 3, 3.5mm headphone jack Colors: Space Black, Silver Keyboard: Magic Keyboard with Touch ID, backlit keys, Force Touch trackpad\n\nAppleCare+ for MacBook Pro:\nPrice: $299 (MacBook Pro 14\") / $399 (MacBook Pro 16\")\nCoverage: Up to three years, two accidental damage incidents per year ($99 screen/external, $299 other), Apple-certified repairs"
+    },
+    {
+      "id": "macbook_chunk_3",
+      "source": "macbook",
+      "content": "Accessories:\nApple USB-C to MagSafe 3 Cable: $49\n140W USB-C Power Adapter: $79\nApple Pro Display XDR: $4,999\nMagic Mouse: $79\nMagic Trackpad: $129\nMagic Keyboard with Touch ID: $99"
+    }
+  ],
+  "tesla": [
+    {
+      "id": "tesla_chunk_0",
+      "source": "tesla",
+      "content": "Tesla Vehicle Catalog"
+    },
+    {
+      "id": "tesla_chunk_1",
+      "source": "tesla",
+      "content": "Tesla Model S Base Price: $74,990 Variant: Model S Long Range — up to 405 miles EPA range Variant: Model S Plaid — up to 396 miles, 0–60 mph in 1.99 seconds, 1,020 hp Top Speed: 155 mph (Long Range) / 200 mph (Plaid with Track Package) Charging: Supercharger V3 up to 250kW, 15 min for 200 miles Display: 17-inch horizontal cinematic touchscreen, 12.3-inch front passenger display"
+    },
+    {
+      "id": "tesla_chunk_2",
+      "source": "tesla",
+      "content": "Autopilot: Standard Autopilot included; Full Self-Driving (FSD) available ($8,000 or $99/month) Interior: 5-seat or 7-seat configuration (optional) Colors: Pearl White, Midnight Silver, Deep Blue, Red Multi-Coat, Stealth Grey, Ultra Red Warranty: 4-year/50,000-mile basic, 8-year/150,000-mile battery and drive unit"
+    },
+    {
+      "id": "tesla_chunk_3",
+      "source": "tesla",
+      "content": "Full Self-Driving (FSD) Capability\nPrice: $8,000 one-time or $99/month subscription\nFeatures: Navigate on Autopilot, Auto Lane Change, Auto Park, Summon, Traffic Light and Stop Sign Control, Autosteer on city streets\nNote: Requires driver supervision; not fully autonomous"
+    },
+    {
+      "id": "tesla_chunk_4",
+      "source": "tesla",
+      "content": "Tesla Charging Solutions\nHome Wall Connector: $400 + installation, up to 44 miles per hour of charge\nSupercharger Network: 50,000+ Superchargers globally, pay per kWh\nMobile Connector: Included with new vehicles, J1772 adapter included"
+    }
+  ]
+}

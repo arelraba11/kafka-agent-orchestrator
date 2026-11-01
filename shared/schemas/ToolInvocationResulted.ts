@@ -10,7 +10,7 @@ export const ToolInvocationResultedSchema = event(
     }),
     result: z.record(z.string(), z.unknown()).meta({
       description:
-        "Open record. An `error` string marks the step as failed. Standard tools return `value`.",
+        "Open record. An `error` string marks the step as failed. `value` is the scalar a downstream `{{step_N.result}}` resolves to; the RAG worker sets it to the product price in USD, digits only, when known.",
     }),
   })
 ).meta({

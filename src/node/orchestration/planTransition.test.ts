@@ -283,6 +283,16 @@ describe("{{step_N.result}} placeholders", () => {
       expect(resolvePlaceholders({ x: "{{step_0.result}}" }, results)).toEqual({ x: "V" });
     });
 
+    test("a RAG result with a price resolves to the price, not the context text", () => {
+      const rag = [
+        {
+          toolName: "getProductInformation",
+          result: { value: "1199", context: "[iphone]\niPhone 16 Pro Max:\nPrice: $1,199" },
+        },
+      ];
+      expect(resolvePlaceholders({ amount: "{{step_0.result}}" }, rag)).toEqual({ amount: "1199" });
+    });
+
     test("context is used when there is no value", () => {
       expect(resolvePlaceholders({ x: "{{step_1.result}}" }, results)).toEqual({
         x: "only-context",

@@ -1,0 +1,20 @@
+{
+  "conversationId": "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b",
+  "timestamp": 1700000000000,
+  "eventType": "ToolInvocationResulted",
+  "payload": {
+    "toolName": "getProductInformation",
+    "stepIndex": 0,
+    "result": {
+      "query": "iPhone price",
+      "context": "[iphone]\niPhone 16 Pro Max:\nPrice: $1,199",
+      "chunks": [
+        { "source": "iphone", "content": "iPhone 16 Pro Max:\nPrice: $1,199", "relevance_score": 0.71 }
+      ],
+      "tool": "getProductInformation",
+      "retrieval_latency_ms": 12.5,
+      "success": true,
+      "value": "1199"
+    }
+  }
+}
