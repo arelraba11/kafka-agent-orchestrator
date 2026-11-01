@@ -2,9 +2,12 @@
 rag_retriever.py — RAG Tool Worker
 
 Kafka consumer for topic `tool-invocation-requests`.
-Filters events where payload.toolName == "getProductInformation".
+Validates every ToolInvocationRequested against the generated contract (contracts.py),
+then filters events where payload.toolName == "getProductInformation".
 Queries ChromaDB for relevant product knowledge chunks.
-Emits ToolInvocationResulted events to topic `conversation-events`.
+Emits ToolInvocationResulted events to topic `conversation-events` (validated first).
+Poison messages (malformed, contract-violating, key mismatch) are written to
+`dead-letter-queue` as MessageDeadLettered records and their offsets committed.
 
 Usage:
     python rag_retriever.py
@@ -22,6 +25,8 @@ import chromadb
 from kafka import KafkaConsumer, KafkaProducer
 from sentence_transformers import SentenceTransformer
 
+import contracts
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -29,6 +34,8 @@ KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
 CONSUMER_GROUP = "rag-tool-worker"
 INPUT_TOPIC = "tool-invocation-requests"
 OUTPUT_TOPIC = "conversation-events"
+DLQ_TOPIC = "dead-letter-queue"  # keep in sync with shared/topics.ts
+SERVICE = "rag"
 
 TOOL_NAME = "getProductInformation"
 COLLECTION_NAME = "product_knowledge_base"
@@ -61,8 +68,7 @@ def make_consumer() -> KafkaConsumer:
         group_id=CONSUMER_GROUP,
         auto_offset_reset="latest",  # matches the TS consumers (fromBeginning: false)
         enable_auto_commit=False,   # commit manually, only after the result send is acked
-        value_deserializer=lambda b: json.loads(b.decode("utf-8")),
-        key_deserializer=lambda b: b.decode("utf-8") if b else None,
+        # raw bytes: a malformed value must not raise inside the consumer iterator
     )
 
 
@@ -70,32 +76,55 @@ def make_producer() -> KafkaProducer:
     return KafkaProducer(bootstrap_servers=KAFKA_BROKER)
 
 
-def emit_result(
-    producer: KafkaProducer,
-    conversation_id: str,
-    result: dict,
-    step_index,
-) -> None:
-    event = {
-        "conversationId": conversation_id,
-        "timestamp": int(time.time() * 1000),
-        "eventType": "ToolInvocationResulted",
-        "payload": {
-            "toolName": TOOL_NAME,
-            "stepIndex": step_index,
-            "result": result,
-        },
-    }
-    # .get() raises if the send failed, so the caller never commits past a lost result
-    producer.send(
-        OUTPUT_TOPIC,
-        key=conversation_id.encode("utf-8"),
-        value=json.dumps(event).encode("utf-8"),
-    ).get(timeout=10)
+def _send_confirmed(producer: KafkaProducer, topic: str, key: bytes | None, value: bytes) -> None:
+    # .get() raises if the send failed, so the caller never commits past a lost record
+    producer.send(topic, key=key, value=value).get(timeout=10)
     producer.flush()
+
+
+def emit_result(producer: KafkaProducer, event: dict) -> None:
+    """Sends an already-validated ToolInvocationResulted (see contracts.result_event)."""
+    _send_confirmed(
+        producer,
+        OUTPUT_TOPIC,
+        event["conversationId"].encode("utf-8"),
+        json.dumps(event).encode("utf-8"),
+    )
     print(
         f"[rag_retriever] Emitted ToolInvocationResulted "
-        f"→ conversationId={conversation_id}"
+        f"→ conversationId={event['conversationId']}"
+    )
+
+
+def dead_letter(producer: KafkaProducer, consumer: KafkaConsumer, message, exc: Exception) -> None:
+    """
+    Writes a MessageDeadLettered record for a poison message, then commits its offset.
+    If the DLQ send fails this raises before the commit, so the process exits and the
+    message is redelivered: a message is never skipped without a DLQ record.
+    """
+    record = contracts.dead_letter_record(
+        topic=message.topic,
+        partition=message.partition,
+        offset=message.offset,
+        key=message.key,
+        timestamp_ms=message.timestamp,
+        value=message.value,
+        group=CONSUMER_GROUP,
+        service=SERVICE,
+        exc=exc,
+    )
+    _send_confirmed(
+        producer,
+        DLQ_TOPIC,
+        message.key,  # keyed by the original key (partition affinity for replay)
+        json.dumps(record, ensure_ascii=False).encode("utf-8"),
+    )
+    consumer.commit()
+    err = record["payload"]["error"]
+    print(
+        f"[kafka] dead-lettered topic={message.topic} partition={message.partition} "
+        f"offset={message.offset} group={CONSUMER_GROUP} class={err['class']} "
+        f"reason={json.dumps(err['reason'])}"
     )
 
 
@@ -155,25 +184,34 @@ def run() -> None:
     print("[rag_retriever] Ready — waiting for messages ...\n")
 
     for message in consumer:
-        event = message.value
-        if not isinstance(event, dict):
-            consumer.commit()
+        # Validate: decode → probe → full schema → key. Poison goes to the DLQ.
+        try:
+            event = contracts.decode(message.value)
+            message_type = contracts.message_type_of(event)
+            if message_type is None:
+                raise contracts.ContractViolation(
+                    "message has no eventType or commandType",
+                    [{"path": "eventType", "message": "missing discriminator"}],
+                )
+            # Only ToolInvocationRequested lives on this topic; skip anything else.
+            if message_type != contracts.REQUEST_TYPE:
+                consumer.commit()
+                continue
+            contracts.validate_request(event)
+            contracts.check_key(message.key, event)
+        except (contracts.MalformedMessage, contracts.ContractViolation, contracts.KeyMismatch) as exc:
+            dead_letter(producer, consumer, message, exc)
             continue
 
-        # Only handle ToolInvocationRequested
-        if event.get("eventType") != "ToolInvocationRequested":
-            consumer.commit()
-            continue
-
-        payload = event.get("payload", {})
+        payload = event["payload"]
 
         # Only handle our tool
-        if payload.get("toolName") != TOOL_NAME:
+        if payload["toolName"] != TOOL_NAME:
             consumer.commit()
             continue
 
-        conversation_id: str = event.get("conversationId", "unknown")
-        tool_input: dict = payload.get("input", {})
+        conversation_id: str = event["conversationId"]
+        tool_input: dict = payload["input"]
 
         # Accept 'query', 'product', or any string value as the search term
         query: str = (
@@ -225,9 +263,19 @@ def run() -> None:
             print(f"[rag_retriever] Error processing query: {error_msg}")
             result = {"error": error_msg, "success": False}
 
-        # Send outside the try: a failed send raises, the process exits uncommitted
-        # and the record is redelivered, instead of becoming a plan-failing error result.
-        emit_result(producer, conversation_id, result, payload.get("stepIndex"))
+        # Build and validate the result, then send it, all outside the try: a failed
+        # send raises, the process exits uncommitted and the record is redelivered,
+        # instead of becoming a plan-failing error result.
+        try:
+            result_message = contracts.result_event(
+                conversation_id, payload["stepIndex"], result, TOOL_NAME
+            )
+        except contracts.OutboundContractViolation as exc:
+            # The input was valid; this worker's own output is not. Dead-letter the input.
+            dead_letter(producer, consumer, message, exc)
+            continue
+
+        emit_result(producer, result_message)
         consumer.commit()
 
 

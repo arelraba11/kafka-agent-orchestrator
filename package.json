@@ -15,7 +15,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "schemas:gen": "bun scripts/gen-schemas.ts",
-    "schemas:check": "bun scripts/gen-schemas.ts --check"
+    "schemas:check": "bun scripts/gen-schemas.ts --check",
+    "test:py": "src/python/venv/bin/python -I -m unittest discover -s src/python/rag -p 'test_*.py'"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",
