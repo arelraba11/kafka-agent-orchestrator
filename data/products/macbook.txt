@@ -22,3 +22,14 @@ Apple Pro Display XDR: $4,999
 Magic Mouse: $79
 Magic Trackpad: $129
 Magic Keyboard with Touch ID: $99
+
+Key Specs and Launch:
+Announced: October 30, 2024, on sale November 8, 2024
+Thunderbolt 5: on the M4 Pro and M4 Max models
+M4 Max: configurable up to a 16-core CPU and 40-core GPU, with up to 128GB of unified memory
+
+Common Questions:
+Q: How many Thunderbolt ports does the MacBook Pro 16-inch have? A: Three Thunderbolt 5 ports, plus HDMI 2.1, an SDXC card slot and MagSafe 3.
+Q: How much memory can it have? A: Up to 128GB of unified memory.
+Q: Does it have a headphone jack? A: Yes, a 3.5mm headphone jack.
+Q: How does it charge? A: Through MagSafe 3 or USB-C, with 140W fast charging.

@@ -21,3 +21,14 @@ Tesla Charging Solutions
 Home Wall Connector: $400 + installation, up to 44 miles per hour of charge
 Supercharger Network: 50,000+ Superchargers globally, pay per kWh
 Mobile Connector: Included with new vehicles, J1772 adapter included
+
+Performance and Warranty:
+Model S Plaid: 1,020 hp, 0–60 mph in 1.99 seconds (Tesla's figure)
+Basic warranty: 4 years or 50,000 miles, whichever comes first
+Battery and drive unit warranty: 8 years or 150,000 miles, whichever comes first
+
+Common Questions:
+Q: Which Model S variant is faster? A: The Model S Plaid, with 1,020 hp and 0–60 mph in 1.99 seconds.
+Q: Which Model S variant has the longest range? A: The Model S Long Range, up to 405 miles EPA range.
+Q: How long is the battery and drive unit warranty? A: 8 years or 150,000 miles.
+Q: Is Full Self-Driving fully autonomous? A: No, it requires driver supervision.

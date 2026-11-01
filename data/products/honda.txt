@@ -20,3 +20,14 @@ Honda Financial Services: Financing from 0.9% APR (well-qualified buyers), lease
 Honda Care (Extended Warranty): Available up to 8 years / 120,000 miles
 Maintenance Minder: Oil life monitoring system, standard on all models
 Roadside Assistance: 3-year / 36,000-mile roadside assistance included with new vehicle purchase
+
+Performance Trims:
+Civic Si: sedan only, 1.5L turbo, 200 hp and 192 lb-ft, 6-speed manual only
+Civic Type R: hatchback only, 2.0L turbo, 315 hp and 310 lb-ft, 6-speed manual only
+Civic LX: 2.0L 4-cylinder, 158 hp and 138 lb-ft, CVT
+
+Common Questions:
+Q: Which Civic trims come with a manual transmission? A: The Si and the Type R, both 6-speed manual only.
+Q: Does the Civic come as a hatchback? A: Yes, the LX is offered as a sedan or hatchback, and the Type R is a hatchback.
+Q: Does every Civic have Honda Sensing? A: Yes, it is standard on all trims.
+Q: How long is the powertrain warranty? A: 5 years or 60,000 miles.

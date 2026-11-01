@@ -14,3 +14,16 @@ Connectivity: Wi-Fi 6E, optional 5G, Bluetooth 5.3
 AppleCare+ for iPad:
 Price: $99/year
 Coverage: Two incidents of accidental damage, express replacement
+
+Key Specs and Variants:
+Thickness: 5.1 mm
+Weight: about 579 grams (Wi-Fi model)
+Announced: May 7, 2024, released May 15, 2024
+Variants: 256GB, 512GB, 1TB and 2TB storage, Wi-Fi or Wi-Fi + Cellular, in Silver or Space Black
+Nano-texture glass: optional on the 1TB and 2TB models
+
+Common Questions:
+Q: Which chip does the iPad Pro use? A: The M4 chip.
+Q: Does the iPad Pro support the Apple Pencil Pro? A: Yes, and it also works with the Magic Keyboard.
+Q: Is cellular built in? A: Only on the Wi-Fi + Cellular model, which adds optional 5G.
+Q: What does AppleCare+ for iPad cover? A: Two incidents of accidental damage and express replacement.
