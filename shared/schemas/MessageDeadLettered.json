@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "MessageDeadLettered",
+  "type": "object",
+  "properties": {
+    "eventType": {
+      "type": "string",
+      "const": "MessageDeadLettered"
+    },
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "conversationId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Best-effort from the original message; null when it could not be parsed."
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "When the message was dead-lettered (epoch ms)."
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "enum": [
+                "user-commands",
+                "conversation-events",
+                "tool-invocation-requests",
+                "dead-letter-queue"
+              ]
+            },
+            "partition": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "offset": {
+              "type": "string",
+              "pattern": "^\\d+$",
+              "description": "int64 as a decimal string."
+            },
+            "key": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timestamp": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d+$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Broker or create time of the original message, as a decimal string."
+            }
+          },
+          "required": [
+            "topic",
+            "partition",
+            "offset",
+            "key",
+            "timestamp"
+          ]
+        },
+        "consumer": {
+          "type": "object",
+          "properties": {
+            "group": {
+              "type": "string",
+              "minLength": 1
+            },
+            "service": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "group",
+            "service"
+          ]
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "class": {
+              "type": "string",
+              "enum": [
+                "malformed-json",
+                "missing-value",
+                "contract-violation",
+                "outbound-contract-violation",
+                "key-mismatch",
+                "handler-non-retryable",
+                "unknown-exhausted"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "issues": {
+              "description": "For contract-violation these describe the original message; for outbound-contract-violation they describe the message the handler tried to produce.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "message"
+                ]
+              }
+            },
+            "outbound": {
+              "description": "Only for outbound-contract-violation: the rejected output.",
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "enum": [
+                    "user-commands",
+                    "conversation-events",
+                    "tool-invocation-requests",
+                    "dead-letter-queue"
+                  ]
+                },
+                "messageType": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "topic",
+                "messageType"
+              ]
+            },
+            "attempts": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "class",
+            "name",
+            "reason",
+            "attempts"
+          ]
+        },
+        "originalValue": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "encoding": {
+                  "type": "string",
+                  "enum": [
+                    "utf8",
+                    "base64"
+                  ]
+                },
+                "data": {
+                  "type": "string"
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "encoding",
+                "data",
+                "truncated"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Raw bytes of the original value; null for a null-value message."
+        }
+      },
+      "required": [
+        "source",
+        "consumer",
+        "error",
+        "originalValue"
+      ]
+    }
+  },
+  "required": [
+    "eventType",
+    "schemaVersion",
+    "conversationId",
+    "timestamp",
+    "payload"
+  ],
+  "title": "MessageDeadLettered",
+  "description": "A poison message that can never be processed. Topic: dead-letter-queue, keyed by the original message key. Producers: every consumer wrapper and the Python rag_retriever. Business failures are PlanFailed events, never dead letters."
+}

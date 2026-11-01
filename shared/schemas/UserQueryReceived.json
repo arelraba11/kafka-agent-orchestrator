@@ -1,20 +1,17 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "UserQueryReceived",
-  "title": "UserQueryReceived",
-  "description": "Command sent by the user interface to initiate a conversation. Topic: user-commands. Producer: webServer.ts. Consumer: routerService.ts.",
   "type": "object",
-  "required": ["conversationId", "timestamp", "eventType", "payload"],
-  "additionalProperties": false,
   "properties": {
     "conversationId": {
       "type": "string",
       "format": "uuid",
-      "description": "Unique identifier for the conversation (partition key)"
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
     "timestamp": {
       "type": "integer",
-      "description": "Unix timestamp in milliseconds (Date.now())"
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "eventType": {
       "type": "string",
@@ -22,19 +19,27 @@
     },
     "payload": {
       "type": "object",
-      "required": ["userInput", "sessionId"],
-      "additionalProperties": false,
       "properties": {
         "userInput": {
           "type": "string",
-          "minLength": 1,
-          "description": "The raw text query from the user"
+          "minLength": 1
         },
         "sessionId": {
-          "type": "string",
-          "description": "WebSocket session identifier"
+          "type": "string"
         }
-      }
+      },
+      "required": [
+        "userInput",
+        "sessionId"
+      ]
     }
-  }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "eventType",
+    "payload"
+  ],
+  "title": "UserQueryReceived",
+  "description": "A user typed a query. Topic: user-commands. Producer: webServer. Consumers: routerService (plans it), answerSynthesizer (caches it)."
 }

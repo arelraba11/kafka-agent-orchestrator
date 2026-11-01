@@ -1,24 +1,17 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "PlanCompleted",
-  "title": "PlanCompleted",
-  "description": "Immutable event emitted by the orchestrator when all plan steps have succeeded. Topic: conversation-events. Producer: orchestrator.ts. Consumer: aggregator.ts.",
   "type": "object",
-  "required": ["conversationId", "sessionId", "timestamp", "eventType", "payload"],
-  "additionalProperties": false,
   "properties": {
     "conversationId": {
       "type": "string",
       "format": "uuid",
-      "description": "Unique identifier for the conversation (partition key)"
-    },
-    "sessionId": {
-      "type": "string",
-      "description": "WebSocket session identifier carried forward for final delivery"
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
     "timestamp": {
       "type": "integer",
-      "description": "Unix timestamp in milliseconds (Date.now())"
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "eventType": {
       "type": "string",
@@ -26,17 +19,52 @@
     },
     "payload": {
       "type": "object",
-      "required": ["results"],
-      "additionalProperties": false,
       "properties": {
         "results": {
           "type": "array",
-          "description": "Ordered array of all ToolInvocationResulted payloads collected during this plan",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string",
+                "enum": [
+                  "weather",
+                  "exchange",
+                  "math",
+                  "chat",
+                  "getProductInformation"
+                ]
+              },
+              "result": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "result"
+            ]
           }
         }
-      }
+      },
+      "required": [
+        "results"
+      ]
+    },
+    "sessionId": {
+      "type": "string"
     }
-  }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "eventType",
+    "payload",
+    "sessionId"
+  ],
+  "title": "PlanCompleted",
+  "description": "Every step of a plan produced a result. Topic: conversation-events. Producer: orchestrator. Consumer: aggregator."
 }

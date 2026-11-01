@@ -1,20 +1,17 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "FinalAnswerSynthesized",
-  "title": "FinalAnswerSynthesized",
-  "description": "Immutable event emitted after OpenAI synthesizes the final answer. Topic: conversation-events. Producer: answerSynthesizer.ts. Consumer: webServer.ts.",
   "type": "object",
-  "required": ["conversationId", "timestamp", "eventType", "payload"],
-  "additionalProperties": false,
   "properties": {
     "conversationId": {
       "type": "string",
       "format": "uuid",
-      "description": "Unique identifier for the conversation (partition key)"
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
     "timestamp": {
       "type": "integer",
-      "description": "Unix timestamp in milliseconds (Date.now())"
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "eventType": {
       "type": "string",
@@ -22,15 +19,22 @@
     },
     "payload": {
       "type": "object",
-      "required": ["answer"],
-      "additionalProperties": false,
       "properties": {
         "answer": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The synthesized natural-language answer delivered to the user"
+          "type": "string"
         }
-      }
+      },
+      "required": [
+        "answer"
+      ]
     }
-  }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "eventType",
+    "payload"
+  ],
+  "title": "FinalAnswerSynthesized",
+  "description": "The LLM-written answer for a conversation. An empty answer is allowed by the contract. Topic: conversation-events. Producer: answerSynthesizer. Consumer: webServer."
 }

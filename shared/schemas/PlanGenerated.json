@@ -1,24 +1,17 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "PlanGenerated",
-  "title": "PlanGenerated",
-  "description": "Immutable event emitted by the router after LLM plan generation. Topic: conversation-events. Producer: routerService.ts. Consumer: orchestrator.ts.",
   "type": "object",
-  "required": ["conversationId", "sessionId", "timestamp", "eventType", "payload"],
-  "additionalProperties": false,
   "properties": {
     "conversationId": {
       "type": "string",
       "format": "uuid",
-      "description": "Unique identifier for the conversation (partition key)"
-    },
-    "sessionId": {
-      "type": "string",
-      "description": "WebSocket session identifier for routing the final answer back"
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
     "timestamp": {
       "type": "integer",
-      "description": "Unix timestamp in milliseconds (Date.now())"
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "eventType": {
       "type": "string",
@@ -26,30 +19,53 @@
     },
     "payload": {
       "type": "object",
-      "required": ["steps"],
-      "additionalProperties": false,
       "properties": {
         "steps": {
-          "type": "array",
           "minItems": 1,
-          "description": "Ordered list of tool invocation steps",
+          "type": "array",
           "items": {
             "type": "object",
-            "required": ["tool", "args"],
-            "additionalProperties": false,
             "properties": {
               "tool": {
                 "type": "string",
-                "description": "Name of the tool to invoke"
+                "enum": [
+                  "weather",
+                  "exchange",
+                  "math",
+                  "chat",
+                  "getProductInformation"
+                ]
               },
               "args": {
                 "type": "object",
-                "description": "Arguments for the tool; values may contain {{step_N.result}} placeholders"
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
               }
-            }
+            },
+            "required": [
+              "tool",
+              "args"
+            ]
           }
         }
-      }
+      },
+      "required": [
+        "steps"
+      ]
+    },
+    "sessionId": {
+      "type": "string"
     }
-  }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "eventType",
+    "payload",
+    "sessionId"
+  ],
+  "title": "PlanGenerated",
+  "description": "The router turned a query into an ordered list of tool steps. Topic: conversation-events. Producer: routerService. Consumer: orchestrator."
 }

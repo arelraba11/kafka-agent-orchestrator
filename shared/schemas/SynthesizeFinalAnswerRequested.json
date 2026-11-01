@@ -1,43 +1,70 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "SynthesizeFinalAnswerRequested",
-  "title": "SynthesizeFinalAnswerRequested",
-  "description": "Command emitted by the aggregator to trigger final answer synthesis. Topic: user-commands. Producer: aggregator.ts. Consumer: answerSynthesizer.ts.",
   "type": "object",
-  "required": ["conversationId", "sessionId", "timestamp", "commandType", "payload"],
-  "additionalProperties": false,
   "properties": {
     "conversationId": {
       "type": "string",
       "format": "uuid",
-      "description": "Unique identifier for the conversation (partition key)"
-    },
-    "sessionId": {
-      "type": "string",
-      "description": "WebSocket session identifier for routing the answer back to the browser"
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
     "timestamp": {
       "type": "integer",
-      "description": "Unix timestamp in milliseconds (Date.now())"
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "commandType": {
       "type": "string",
-      "const": "SynthesizeFinalAnswerRequested",
-      "description": "Uses commandType (not eventType) to distinguish CQRS commands from events"
+      "const": "SynthesizeFinalAnswerRequested"
     },
     "payload": {
       "type": "object",
-      "required": ["results"],
-      "additionalProperties": false,
       "properties": {
         "results": {
           "type": "array",
-          "description": "All tool results to be synthesized into the final answer",
           "items": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string",
+                "enum": [
+                  "weather",
+                  "exchange",
+                  "math",
+                  "chat",
+                  "getProductInformation"
+                ]
+              },
+              "result": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "result"
+            ]
           }
         }
-      }
+      },
+      "required": [
+        "results"
+      ]
+    },
+    "sessionId": {
+      "type": "string"
     }
-  }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "commandType",
+    "payload",
+    "sessionId"
+  ],
+  "title": "SynthesizeFinalAnswerRequested",
+  "description": "Command to turn a completed plan's results into a final answer. Uses commandType, not eventType, as its discriminator. Topic: user-commands. Producer: aggregator. Consumer: answerSynthesizer."
 }

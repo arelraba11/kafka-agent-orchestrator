@@ -13,7 +13,9 @@
     "web": "bun src/node/core/webServer.ts",
     "web:dev": "cd src/frontend && bun run dev",
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "schemas:gen": "bun scripts/gen-schemas.ts",
+    "schemas:check": "bun scripts/gen-schemas.ts --check"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",

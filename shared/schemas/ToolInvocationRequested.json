@@ -1,20 +1,17 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "ToolInvocationRequested",
-  "title": "ToolInvocationRequested",
-  "description": "Command dispatched by the orchestrator to trigger a tool worker. Topic: tool-invocation-requests. Producer: orchestrator.ts. Consumer: tool workers (mathApp, weatherApp, exchangeApp, generalChatApp, rag_retriever).",
   "type": "object",
-  "required": ["conversationId", "timestamp", "eventType", "payload"],
-  "additionalProperties": false,
   "properties": {
     "conversationId": {
       "type": "string",
       "format": "uuid",
-      "description": "Unique identifier for the conversation (partition key)"
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
     "timestamp": {
       "type": "integer",
-      "description": "Unix timestamp in milliseconds (Date.now())"
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "eventType": {
       "type": "string",
@@ -22,23 +19,44 @@
     },
     "payload": {
       "type": "object",
-      "required": ["toolName", "stepIndex", "input"],
-      "additionalProperties": false,
       "properties": {
         "toolName": {
           "type": "string",
-          "description": "Name of the tool to invoke (e.g. math, weather, exchangeRate, generalChat, getProductInformation)"
+          "enum": [
+            "weather",
+            "exchange",
+            "math",
+            "chat",
+            "getProductInformation"
+          ]
         },
         "stepIndex": {
           "type": "integer",
           "minimum": 0,
-          "description": "Index of the plan step this request executes; workers echo it in ToolInvocationResulted"
+          "maximum": 9007199254740991,
+          "description": "Index of the plan step this request executes."
         },
         "input": {
           "type": "object",
-          "description": "Resolved arguments passed to the tool (placeholders already substituted)"
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
         }
-      }
+      },
+      "required": [
+        "toolName",
+        "stepIndex",
+        "input"
+      ]
     }
-  }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "eventType",
+    "payload"
+  ],
+  "title": "ToolInvocationRequested",
+  "description": "The orchestrator asks one tool worker to run one plan step. Topic: tool-invocation-requests. Producer: orchestrator. Consumers: the math, weather, exchange and chat workers and the Python rag_retriever; each handles its own toolName."
 }
