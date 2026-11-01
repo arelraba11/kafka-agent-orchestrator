@@ -114,34 +114,23 @@ await subscribeAndRun(
     const { conversationId, payload } = event;
     const sessionId = payload.sessionId;
 
-    try {
-      const steps = await generatePlanLLM(payload.userInput, sessionId);
+    // generatePlanLLM falls back to the regex planner, so the only realistic failure
+    // here is the send. That is transient: let it throw and the message is redelivered.
+    const steps = await generatePlanLLM(payload.userInput, sessionId);
 
-      const planEvent: PlanGenerated = {
-        conversationId,
-        sessionId,
-        timestamp: Date.now(),
-        eventType: "PlanGenerated",
-        payload: { steps },
-      };
+    const planEvent: PlanGenerated = {
+      conversationId,
+      sessionId,
+      timestamp: Date.now(),
+      eventType: "PlanGenerated",
+      payload: { steps },
+    };
 
-      await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
+    await sendMessage(producer, TOPICS.CONVERSATION_EVENTS, conversationId, planEvent);
 
-      const routerLatency = Date.now() - event.timestamp;
-      console.log(`[router] conversationId=${conversationId} plan=[${steps.map(s => s.tool).join(", ")}] input="${payload.userInput}"`);
-      console.log(`[Benchmark] conversationId=${conversationId} routerLatency=${routerLatency}ms`);
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      console.error(`[router] conversationId=${conversationId} unrecoverable error: ${reason}`);
-      await sendMessage(producer, TOPICS.DEAD_LETTER_QUEUE, conversationId, {
-        conversationId,
-        timestamp: Date.now(),
-        source: "router",
-        reason,
-        userInput: payload.userInput,
-      });
-      console.log(`[router] conversationId=${conversationId} dead-letter published`);
-    }
+    const routerLatency = Date.now() - event.timestamp;
+    console.log(`[router] conversationId=${conversationId} plan=[${steps.map(s => s.tool).join(", ")}] input="${payload.userInput}"`);
+    console.log(`[Benchmark] conversationId=${conversationId} routerLatency=${routerLatency}ms`);
   }
 );
 

@@ -109,14 +109,8 @@ function failureMessages(
     eventType: "PlanFailed",
     payload: { reason, failedTool, completedResults },
   };
-  return [
-    { topic: TOPICS.CONVERSATION_EVENTS, key: conversationId, value: planFailed },
-    {
-      topic: TOPICS.DEAD_LETTER_QUEUE,
-      key: conversationId,
-      value: { conversationId, timestamp: now, source: "orchestrator", reason, failedTool },
-    },
-  ];
+  // A failed plan is a domain event; the dead-letter queue holds poison messages only.
+  return [{ topic: TOPICS.CONVERSATION_EVENTS, key: conversationId, value: planFailed }];
 }
 
 function onPlanGenerated(

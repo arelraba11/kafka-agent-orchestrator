@@ -61,7 +61,6 @@ async function handle(
     }
     case "failed":
       console.log(`[orchestrator] conversationId=${conversationId} plan FAILED reason=${decision.reason}`);
-      console.log(`[orchestrator] conversationId=${conversationId} dead-letter published`);
       break;
   }
 }

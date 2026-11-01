@@ -200,7 +200,7 @@ describe("terminal and unknown plans", () => {
 });
 
 describe("failed step", () => {
-  test("an error result fails the plan, emitting PlanFailed and a DLQ record", () => {
+  test("an error result fails the plan, emitting only PlanFailed (no DLQ record)", () => {
     const plan: PlanStep[] = [
       { tool: "weather", args: { city: "Tel Aviv" } },
       { tool: "math", args: { expression: "2/0" } },
@@ -220,9 +220,10 @@ describe("failed step", () => {
       failedTool: "math",
     });
     expect(r.state!.status).toBe("failed");
-    expect(r.emit).toHaveLength(2);
+    // Business failures are PlanFailed events, never dead letters.
+    expect(r.emit).toHaveLength(1);
 
-    const [failed, dlq] = r.emit;
+    const [failed] = r.emit;
     expect(failed.topic).toBe(TOPICS.CONVERSATION_EVENTS);
     expect(failed.key).toBe(ID);
     expect(failed.value).toEqual({
@@ -234,16 +235,6 @@ describe("failed step", () => {
         failedTool: "math",
         completedResults: [{ toolName: "weather", result: { value: "sunny" } }],
       },
-    });
-
-    expect(dlq.topic).toBe(TOPICS.DEAD_LETTER_QUEUE);
-    expect(dlq.key).toBe(ID);
-    expect(dlq.value).toEqual({
-      conversationId: ID,
-      timestamp: NOW,
-      source: "orchestrator",
-      reason: "Division by zero",
-      failedTool: "math",
     });
   });
 });
@@ -257,13 +248,12 @@ describe("empty plan", () => {
       failedTool: "none",
     });
     expect(r.state).toMatchObject({ status: "failed", plan: [], stepIndex: 0, results: [] });
-    expect(r.emit).toHaveLength(2);
+    expect(r.emit).toHaveLength(1);
     expect(r.emit[0].topic).toBe(TOPICS.CONVERSATION_EVENTS);
     expect(r.emit[0].value).toMatchObject({
       eventType: "PlanFailed",
       payload: { reason: "plan has no steps", failedTool: "none", completedResults: [] },
     });
-    expect(r.emit[1].topic).toBe(TOPICS.DEAD_LETTER_QUEUE);
   });
 });
 
