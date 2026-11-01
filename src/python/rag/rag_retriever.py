@@ -59,8 +59,8 @@ def make_consumer() -> KafkaConsumer:
         INPUT_TOPIC,
         bootstrap_servers=KAFKA_BROKER,
         group_id=CONSUMER_GROUP,
-        auto_offset_reset="earliest",
-        enable_auto_commit=True,
+        auto_offset_reset="latest",  # matches the TS consumers (fromBeginning: false)
+        enable_auto_commit=False,   # commit manually, only after the result send is acked
         value_deserializer=lambda b: json.loads(b.decode("utf-8")),
         key_deserializer=lambda b: b.decode("utf-8") if b else None,
     )
@@ -86,11 +86,12 @@ def emit_result(
             "result": result,
         },
     }
+    # .get() raises if the send failed, so the caller never commits past a lost result
     producer.send(
         OUTPUT_TOPIC,
         key=conversation_id.encode("utf-8"),
         value=json.dumps(event).encode("utf-8"),
-    )
+    ).get(timeout=10)
     producer.flush()
     print(
         f"[rag_retriever] Emitted ToolInvocationResulted "
@@ -156,16 +157,19 @@ def run() -> None:
     for message in consumer:
         event = message.value
         if not isinstance(event, dict):
+            consumer.commit()
             continue
 
         # Only handle ToolInvocationRequested
         if event.get("eventType") != "ToolInvocationRequested":
+            consumer.commit()
             continue
 
         payload = event.get("payload", {})
 
         # Only handle our tool
         if payload.get("toolName") != TOOL_NAME:
+            consumer.commit()
             continue
 
         conversation_id: str = event.get("conversationId", "unknown")
@@ -186,6 +190,7 @@ def run() -> None:
             f'query="{query}"'
         )
 
+        result: dict
         try:
             t_start = time.time()
             chunks = retrieve(model, collection, query)
@@ -215,11 +220,15 @@ def run() -> None:
                 "success": True,
             }
 
-            emit_result(producer, conversation_id, result, payload.get("stepIndex"))
         except Exception as exc:
             error_msg = str(exc)
             print(f"[rag_retriever] Error processing query: {error_msg}")
-            emit_result(producer, conversation_id, {"error": error_msg, "success": False}, payload.get("stepIndex"))
+            result = {"error": error_msg, "success": False}
+
+        # Send outside the try: a failed send raises, the process exits uncommitted
+        # and the record is redelivered, instead of becoming a plan-failing error result.
+        emit_result(producer, conversation_id, result, payload.get("stepIndex"))
+        consumer.commit()
 
 
 if __name__ == "__main__":
