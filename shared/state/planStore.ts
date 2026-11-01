@@ -6,9 +6,9 @@ import type { PlanStep } from "../schemas/PlanGenerated";
 
 export interface PlanState {
   plan: PlanStep[];                  // ordered steps with tool name + args
-  stepIndex: number;                 // index of the next step to dispatch
+  stepIndex: number;                 // index of the step awaiting a result; equals plan.length once completed
   results: Record<string, unknown>[]; // accumulated tool results
-  status: "pending" | "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed";
   planReceivedAt: number;            // epoch ms — used for latency benchmarking
   sessionId: string;                 // groups conversations into a session for history
 }

@@ -18,40 +18,9 @@ import {
   updatePlan,
   deletePlan,
 } from "../../../shared/state/planStore";
+import { resolvePlaceholders } from "./planTransition";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Resolves {{step_N.result}} placeholders in step.args string values.
- * N is the 0-indexed step number; replacement uses result.value if present,
- * otherwise the full JSON-stringified result object.
- */
-function resolvePlaceholders(
-  args: Record<string, unknown>,
-  results: Record<string, unknown>[]
-): Record<string, unknown> {
-  const resolved: Record<string, unknown> = {};
-
-  for (const [key, val] of Object.entries(args)) {
-    if (typeof val === "string") {
-      resolved[key] = val.replace(/\{\{step_(\d+)\.result\}\}/g, (_match, nStr) => {
-        const n = parseInt(nStr, 10);
-        const entry = results[n] as { result?: Record<string, unknown> } | undefined;
-        if (!entry) return "";
-        const result = entry.result;
-        if (!result) return "";
-        // Standard tools return { value }; RAG returns { context }
-        if (result.value !== undefined) return String(result.value);
-        if (result.context !== undefined) return String(result.context);
-        return JSON.stringify(result);
-      });
-    } else {
-      resolved[key] = val;
-    }
-  }
-
-  return resolved;
-}
 
 async function dispatchStep(
   producer: Awaited<ReturnType<typeof createProducer>>,
@@ -115,7 +84,7 @@ async function onPlanGenerated(
     plan: steps,
     stepIndex: 0,
     results: [],
-    status: "pending",
+    status: "running",
     planReceivedAt: Date.now(),
     sessionId: event.sessionId,
   });
