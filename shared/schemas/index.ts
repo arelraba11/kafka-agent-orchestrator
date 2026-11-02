@@ -8,6 +8,8 @@ import { PlanCompletedSchema } from "./PlanCompleted";
 import { PlanFailedSchema } from "./PlanFailed";
 import { SynthesizeFinalAnswerRequestedSchema } from "./SynthesizeFinalAnswerRequested";
 import { FinalAnswerSynthesizedSchema } from "./FinalAnswerSynthesized";
+import { ConversationFailedSchema } from "./ConversationFailed";
+import { StepTimedOutSchema } from "./StepTimedOut";
 import { MessageDeadLetteredSchema } from "./MessageDeadLettered";
 
 export type { UserQueryReceived, UserQueryReceivedPayload } from "./UserQueryReceived";
@@ -18,6 +20,8 @@ export type { PlanCompleted, PlanCompletedPayload } from "./PlanCompleted";
 export type { PlanFailed } from "./PlanFailed";
 export type { SynthesizeFinalAnswerRequested } from "./SynthesizeFinalAnswerRequested";
 export type { FinalAnswerSynthesized, FinalAnswerSynthesizedPayload } from "./FinalAnswerSynthesized";
+export type { ConversationFailed, ConversationFailedPayload } from "./ConversationFailed";
+export type { StepTimedOut, StepTimedOutPayload } from "./StepTimedOut";
 export type { MessageDeadLettered, DeadLetterErrorClass } from "./MessageDeadLettered";
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
@@ -32,6 +36,8 @@ export const MESSAGE_SCHEMAS = {
   PlanCompleted: PlanCompletedSchema,
   PlanFailed: PlanFailedSchema,
   FinalAnswerSynthesized: FinalAnswerSynthesizedSchema,
+  ConversationFailed: ConversationFailedSchema,
+  StepTimedOut: StepTimedOutSchema,
   MessageDeadLettered: MessageDeadLetteredSchema,
 } as const;
 
@@ -46,6 +52,8 @@ export const TOPIC_MESSAGES = {
     "PlanCompleted",
     "PlanFailed",
     "FinalAnswerSynthesized",
+    "ConversationFailed",
+    "StepTimedOut",
   ],
   [TOPICS.TOOL_INVOCATION_REQUESTS]: ["ToolInvocationRequested"],
   [TOPICS.DEAD_LETTER_QUEUE]: ["MessageDeadLettered"],

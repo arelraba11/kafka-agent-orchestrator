@@ -20,6 +20,14 @@
     "payload": {
       "type": "object",
       "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "tool-error",
+            "step-timeout",
+            "empty-plan"
+          ]
+        },
         "reason": {
           "type": "string"
         },
@@ -58,6 +66,7 @@
         }
       },
       "required": [
+        "code",
         "reason",
         "failedTool",
         "completedResults"
@@ -71,5 +80,5 @@
     "payload"
   ],
   "title": "PlanFailed",
-  "description": "A plan could not finish (a tool returned an error, or the plan was empty). Topic: conversation-events. Producer: orchestrator. Consumer: webServer."
+  "description": "A plan could not finish (a tool returned an error, a step timed out, or the plan was empty); `code` says which. Topic: conversation-events. Producer: orchestrator. Consumer: webServer."
 }

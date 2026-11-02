@@ -3,6 +3,7 @@
   "timestamp": 1700000000000,
   "eventType": "PlanFailed",
   "payload": {
+    "code": "empty-plan",
     "reason": "plan has no steps",
     "failedTool": "none",
     "completedResults": []

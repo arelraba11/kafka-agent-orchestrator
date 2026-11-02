@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "StepTimedOut",
+  "type": "object",
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "eventType": {
+      "type": "string",
+      "const": "StepTimedOut"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "stepIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "deadline": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "The stepDeadline (epoch ms) the timer was armed for; a mismatch with the plan's deadline marks it stale."
+        }
+      },
+      "required": [
+        "stepIndex",
+        "deadline"
+      ]
+    }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "eventType",
+    "payload"
+  ],
+  "title": "StepTimedOut",
+  "description": "A tool step did not answer before its deadline. Published by the orchestrator's timer so the timeout flows through the same serialized event path as results. Topic: conversation-events. Producer and consumer: orchestrator."
+}

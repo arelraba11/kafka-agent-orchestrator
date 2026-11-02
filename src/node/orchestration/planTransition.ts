@@ -96,6 +96,7 @@ function requestMessage(
 
 function failureMessages(
   conversationId: string,
+  code: PlanFailed["payload"]["code"],
   reason: string,
   failedTool: string,
   completedResults: StepResultEntry[],
@@ -105,7 +106,7 @@ function failureMessages(
     conversationId,
     timestamp: now,
     eventType: "PlanFailed",
-    payload: { reason, failedTool, completedResults },
+    payload: { code, reason, failedTool, completedResults },
   };
   // A failed plan is a domain event; the dead-letter queue holds poison messages only.
   return [{ topic: TOPICS.CONVERSATION_EVENTS, message: planFailed }];
@@ -134,7 +135,7 @@ function onPlanGenerated(
         planReceivedAt: now,
         sessionId,
       },
-      emit: failureMessages(conversationId, reason, "none", [], now),
+      emit: failureMessages(conversationId, "empty-plan", reason, "none", [], now),
       decision: { kind: "failed", reason, failedTool: "none" },
     };
   }
@@ -192,7 +193,7 @@ function onToolInvocationResulted(
     const reason = result.error;
     return {
       state: { ...state, status: "failed" },
-      emit: failureMessages(conversationId, reason, payload.toolName, state.results, now),
+      emit: failureMessages(conversationId, "tool-error", reason, payload.toolName, state.results, now),
       decision: { kind: "failed", reason, failedTool: payload.toolName },
     };
   }

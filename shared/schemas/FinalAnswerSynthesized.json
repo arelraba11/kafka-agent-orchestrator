@@ -21,7 +21,8 @@
       "type": "object",
       "properties": {
         "answer": {
-          "type": "string"
+          "type": "string",
+          "pattern": "\\S"
         }
       },
       "required": [
@@ -36,5 +37,5 @@
     "payload"
   ],
   "title": "FinalAnswerSynthesized",
-  "description": "The LLM-written answer for a conversation. An empty answer is allowed by the contract. Topic: conversation-events. Producer: answerSynthesizer. Consumer: webServer."
+  "description": "The LLM-written answer for a conversation. The answer must contain a non-whitespace character; an empty LLM answer is reported as a ConversationFailed instead. Topic: conversation-events. Producer: answerSynthesizer. Consumer: webServer."
 }

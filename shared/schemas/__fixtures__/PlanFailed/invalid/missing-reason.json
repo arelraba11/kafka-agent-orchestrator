@@ -3,6 +3,7 @@
   "timestamp": 1700000000000,
   "eventType": "PlanFailed",
   "payload": {
+    "code": "tool-error",
     "failedTool": "math",
     "completedResults": []
   }

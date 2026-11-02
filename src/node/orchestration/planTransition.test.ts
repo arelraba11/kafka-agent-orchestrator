@@ -228,6 +228,7 @@ describe("failed step", () => {
       timestamp: NOW,
       eventType: "PlanFailed",
       payload: {
+        code: "tool-error",
         reason: "Division by zero",
         failedTool: "math",
         completedResults: [{ toolName: "weather", result: { value: "sunny" } }],
@@ -249,7 +250,7 @@ describe("empty plan", () => {
     expect(r.emit[0].topic).toBe(TOPICS.CONVERSATION_EVENTS);
     expect(r.emit[0].message).toMatchObject({
       eventType: "PlanFailed",
-      payload: { reason: "plan has no steps", failedTool: "none", completedResults: [] },
+      payload: { code: "empty-plan", reason: "plan has no steps", failedTool: "none", completedResults: [] },
     });
   });
 });

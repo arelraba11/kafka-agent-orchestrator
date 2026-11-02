@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ConversationFailed",
+  "type": "object",
+  "properties": {
+    "conversationId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "eventType": {
+      "type": "string",
+      "const": "ConversationFailed"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "type": "string",
+          "enum": [
+            "routing",
+            "orchestration",
+            "aggregation",
+            "synthesis"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "llm-unavailable",
+            "llm-misconfigured",
+            "empty-answer",
+            "missing-question",
+            "internal-error"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Operator-facing detail for logs. The UI shows a message derived from `code`, never this."
+        }
+      },
+      "required": [
+        "stage",
+        "code",
+        "reason"
+      ]
+    }
+  },
+  "required": [
+    "conversationId",
+    "timestamp",
+    "eventType",
+    "payload"
+  ],
+  "title": "ConversationFailed",
+  "description": "A conversation failed at a stage that has no plan state (routing, orchestration before a plan exists, aggregation, synthesis), so the user can be told. Topic: conversation-events. Producers: answerSynthesizer, and the dead-letter hook of routerService, orchestrator and aggregator. Consumer: webServer."
+}
