@@ -10,7 +10,8 @@ import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceive
 import type { ConversationFailed } from "../../../shared/schemas/ConversationFailed";
 import { WEB_OWNED_TYPES } from "../../../shared/kafka/failureOwnership";
 import { stepTimeoutMs } from "../../../shared/stepTimeout";
-import { toClientFrame } from "./clientFrames";
+import { answerFrame, toClientFrame, toolFrame, unavailableFrame } from "./clientFrames";
+import { sweepPending } from "./pendingSweep";
 import { join } from "path";
 
 const PORT = 3001;
@@ -18,9 +19,17 @@ const CONSUMER_GROUP = "ui-web-final-answer";
 const DIST_DIR = join(import.meta.dir, "../../../src/frontend/dist");
 const FRAME_CONFIG = { stepTimeoutMs: stepTimeoutMs() };
 
-// Map<conversationId, WebSocket> — tracks in-flight requests
+// Map<conversationId, {ws, at}> — tracks in-flight requests. `at` feeds the TTL sweeper.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const pending = new Map<string, any>();
+const pending = new Map<string, { ws: any; at: number }>();
+
+// Memory hygiene only (the client's idle timeout is what tells the user): drop entries
+// whose answer never came.
+setInterval(() => {
+  for (const id of sweepPending(pending, Date.now())) {
+    console.warn(`[webserver] conversationId=${id} dropped pending entry (ttl)`);
+  }
+}, 30_000);
 
 // Map<WebSocket, sessionId> — one sessionId per browser tab / connection
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,7 +54,7 @@ await subscribeAndRun({
     owns: WEB_OWNED_TYPES,
     handle: async (record) => {
       const conversationId = record.conversationId!;
-      const ws = pending.get(conversationId);
+      const ws = pending.get(conversationId)?.ws;
       if (!ws) return;
       pending.delete(conversationId);
       const failed: ConversationFailed = {
@@ -62,16 +71,16 @@ await subscribeAndRun({
     },
   },
   handler: async (event) => {
-    const ws = pending.get(event.conversationId);
+    const ws = pending.get(event.conversationId)?.ws;
     if (!ws) return; // belongs to another client
 
     switch (event.eventType) {
       case "ToolInvocationResulted":
-        ws.send(JSON.stringify({ type: "tool", toolName: event.payload.toolName }));
+        ws.send(JSON.stringify(toolFrame(event.conversationId, event.payload.toolName)));
         break;
       case "FinalAnswerSynthesized":
         pending.delete(event.conversationId);
-        ws.send(JSON.stringify({ type: "answer", answer: event.payload.answer }));
+        ws.send(JSON.stringify(answerFrame(event.conversationId, event.payload.answer)));
         break;
       case "PlanFailed":
       case "ConversationFailed":
@@ -120,7 +129,7 @@ Bun.serve({
       const sessionId = sessions.get(ws) ?? crypto.randomUUID();
 
       // Register BEFORE producing — closes race window
-      pending.set(conversationId, ws);
+      pending.set(conversationId, { ws, at: Date.now() });
 
       const queryEvent: UserQueryReceived = {
         conversationId,
@@ -129,14 +138,16 @@ Bun.serve({
         payload: { userInput, sessionId },
       };
       // Not inside a consumer handler: there is no input message to dead-letter. A
-      // contract violation (or any send failure) is logged and the frame dropped.
+      // publish failure (Kafka down, contract violation) is logged and the user gets an
+      // `unavailable` error frame instead of waiting for an answer that cannot come.
       try {
         await publish(producer, TOPICS.USER_COMMANDS, queryEvent);
       } catch (err) {
         pending.delete(conversationId);
         console.error(
-          `[webserver] conversationId=${conversationId} dropped frame: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`
+          `[webserver] conversationId=${conversationId} publish failed: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`
         );
+        ws.send(JSON.stringify(unavailableFrame(conversationId)));
         return;
       }
 
@@ -146,8 +157,8 @@ Bun.serve({
 
     close(ws) {
       // Purge all in-flight entries for this socket (tab closed mid-request)
-      for (const [id, socket] of pending.entries()) {
-        if (socket === ws) pending.delete(id);
+      for (const [id, entry] of pending.entries()) {
+        if (entry.ws === ws) pending.delete(id);
       }
       sessions.delete(ws);
       console.log("[webserver] client disconnected");

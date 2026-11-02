@@ -14,8 +14,40 @@ export interface ErrorFrame {
   reason: string;
   failedTool?: string;
   conversationId: string;
-  code: PlanFailed["payload"]["code"] | ConversationFailed["payload"]["code"];
+  code: PlanFailed["payload"]["code"] | ConversationFailed["payload"]["code"] | "unavailable";
 }
+
+export interface ToolFrame {
+  type: "tool";
+  toolName: string;
+  conversationId: string;
+}
+
+export interface AnswerFrame {
+  type: "answer";
+  answer: string;
+  conversationId: string;
+}
+
+export const toolFrame = (conversationId: string, toolName: string): ToolFrame => ({
+  type: "tool",
+  toolName,
+  conversationId,
+});
+
+export const answerFrame = (conversationId: string, answer: string): AnswerFrame => ({
+  type: "answer",
+  answer,
+  conversationId,
+});
+
+/** The web server could not publish the query (Kafka down): no pipeline will answer. */
+export const unavailableFrame = (conversationId: string): ErrorFrame => ({
+  type: "error",
+  reason: "The service is unavailable right now. Try again.",
+  conversationId,
+  code: "unavailable",
+});
 
 export interface FrameConfig {
   /** The orchestrator's STEP_TIMEOUT_MS, to word step timeouts ("within 30 s"). */

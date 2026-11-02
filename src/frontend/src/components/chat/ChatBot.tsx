@@ -5,6 +5,13 @@ import ChatMessages from "./ChatMessages";
 import ChatInput from "./ChatInput";
 import TracePanel from "./TracePanel";
 import type { TraceState } from "./TracePanel";
+import {
+  initialInFlight,
+  reduceInFlight,
+  type InFlightAction,
+  type InFlightState,
+  type ServerFrame,
+} from "./inFlight";
 
 type Status = "connecting" | "connected" | "disconnected";
 
@@ -21,8 +28,44 @@ export default function ChatBot() {
     toolsUsed: [],
   });
   const wsRef = useRef<WebSocket | null>(null);
-  const pendingRef = useRef<Map<string, string>>(new Map());
+  // The single in-flight request of this tab; all transitions go through reduceInFlight.
+  const inFlightRef = useRef<InFlightState>(initialInFlight);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const dispatch = useCallback((action: InFlightAction) => {
+    const prev = inFlightRef.current;
+    const { state, resolution } = reduceInFlight(prev, action);
+    inFlightRef.current = state;
+
+    // Idle timer: one timeout armed for the current deadline, fed back as a tick.
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = null;
+    if (state.active) {
+      idleTimerRef.current = setTimeout(
+        () => dispatch({ type: "tick", now: Date.now() }),
+        Math.max(0, state.active.deadline - Date.now())
+      );
+    }
+
+    if (state.active && state.active.tools !== prev.active?.tools) {
+      const toolsUsed = state.active.tools;
+      setTraceState((s) => ({ ...s, toolsUsed }));
+    }
+
+    if (resolution) {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      setTypingPhase(null);
+      setTraceState((s) => ({ ...s, status: "done", answerTime: Date.now() }));
+      setMessages((msgs) =>
+        msgs.map((m) =>
+          m.id === resolution.bubbleId
+            ? { ...m, role: resolution.role, content: resolution.content, pending: false }
+            : m
+        )
+      );
+    }
+  }, []);
 
   const connect = useCallback(() => {
     const ws = new WebSocket(
@@ -35,84 +78,57 @@ export default function ChatBot() {
     ws.onopen = () => setStatus("connected");
     ws.onclose = () => {
       setStatus("disconnected");
+      dispatch({ type: "disconnect" });
       setTimeout(connect, 3000);
     };
     ws.onerror = () => ws.close();
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const frame = JSON.parse(event.data) as ServerFrame;
+      const before = inFlightRef.current.active;
+      dispatch({ type: "frame", frame, now: Date.now() });
+      const after = inFlightRef.current.active;
 
-      if (data.type === "ack") {
-        const pendingId = crypto.randomUUID();
-        pendingRef.current.set(data.conversationId, pendingId);
-        setTypingPhase("thinking");
-        setTraceState({ status: "thinking", ackTime: Date.now(), answerTime: null, toolsUsed: [] });
-        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-        typingTimerRef.current = setTimeout(() => {
-          setTypingPhase("processing");
-          setTraceState((s) => ({ ...s, status: "processing" }));
-        }, 2000);
-        setMessages((prev) => [
-          ...prev,
-          { id: pendingId, role: "bot", content: "", pending: true, timestamp: Date.now() },
-        ]);
-        return;
-      }
-
-      if (data.type === "tool") {
-        setTraceState((s) => ({
-          ...s,
-          toolsUsed: s.toolsUsed.includes(data.toolName)
-            ? s.toolsUsed
-            : [...s.toolsUsed, data.toolName],
-        }));
-        return;
-      }
-
-      if (data.type === "answer" || data.type === "error") {
-        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-        setTypingPhase(null);
-        setTraceState((s) => ({ ...s, status: "done", answerTime: Date.now() }));
-        const pendingId = [...pendingRef.current.values()][0];
-        pendingRef.current.clear();
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === pendingId
-              ? {
-                  ...m,
-                  role: data.type === "error" ? "error" : "bot",
-                  content:
-                    data.type === "error"
-                      ? data.reason ?? "Something went wrong"
-                      : data.answer,
-                  pending: false,
-                }
-              : m
-          )
-        );
+      // The ack bound the request to its conversationId: the trace starts counting.
+      if (frame.type === "ack" && before && !before.conversationId && after?.conversationId) {
+        setTraceState((s) => ({ ...s, ackTime: Date.now() }));
       }
     };
-  }, []);
+  }, [dispatch]);
 
   useEffect(() => {
     connect();
     return () => {
       wsRef.current?.close();
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
   }, [connect]);
 
   const sendMessage = useCallback(
     (text: string) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      if (inFlightRef.current.active) return; // one in-flight request per tab
       setLastUserMessage(text);
+      // The bot bubble exists from the moment of sending; the ack only binds its conversationId.
+      const bubbleId = crypto.randomUUID();
+      const now = Date.now();
       setMessages((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), role: "user", content: text, timestamp: Date.now() },
+        { id: crypto.randomUUID(), role: "user", content: text, timestamp: now },
+        { id: bubbleId, role: "bot", content: "", pending: true, timestamp: now },
       ]);
+      setTypingPhase("thinking");
+      setTraceState({ status: "thinking", ackTime: null, answerTime: null, toolsUsed: [] });
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = setTimeout(() => {
+        setTypingPhase("processing");
+        setTraceState((s) => ({ ...s, status: "processing" }));
+      }, 2000);
+      dispatch({ type: "send", bubbleId, now });
       wsRef.current.send(text);
     },
-    []
+    [dispatch]
   );
 
   const handleRetry = useCallback(() => {

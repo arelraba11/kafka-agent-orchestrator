@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ConversationFailed } from "../../../shared/schemas/ConversationFailed";
 import type { PlanFailed } from "../../../shared/schemas/PlanFailed";
-import { toClientFrame } from "./clientFrames";
+import { answerFrame, toClientFrame, toolFrame, unavailableFrame } from "./clientFrames";
 
 const CID = "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b";
 const CONFIG = { stepTimeoutMs: 30_000 };
@@ -99,5 +99,21 @@ describe("frame shape", () => {
     const f = JSON.parse(JSON.stringify(toClientFrame(planFailed("tool-error", "math", "boom"), CONFIG)));
     expect(f.type).toBe("error");
     expect(typeof f.reason).toBe("string");
+  });
+});
+
+describe("frames outside the failure events", () => {
+  test("unavailable is the existing error frame with code unavailable and a user message", () => {
+    expect(unavailableFrame(CID)).toEqual({
+      type: "error",
+      reason: "The service is unavailable right now. Try again.",
+      conversationId: CID,
+      code: "unavailable",
+    });
+  });
+
+  test("tool and answer frames carry the conversationId", () => {
+    expect(toolFrame(CID, "math")).toEqual({ type: "tool", toolName: "math", conversationId: CID });
+    expect(answerFrame(CID, "108")).toEqual({ type: "answer", answer: "108", conversationId: CID });
   });
 });
