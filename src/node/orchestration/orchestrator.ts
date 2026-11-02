@@ -12,11 +12,10 @@ import { initializeStore, getPlan, savePlan, listRunningPlans } from "../../../s
 import { transition, type OrchestratorInput } from "./planTransition";
 import { createStepTimers, rescheduleRunning, type StepTimers } from "./stepTimers";
 
-/** One global bound on how long a dispatched tool step may go unanswered. */
-const STEP_TIMEOUT_MS = (() => {
-  const n = Number(process.env.STEP_TIMEOUT_MS);
-  return Number.isFinite(n) && n > 0 ? n : 30_000;
-})();
+import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
+import { stepTimeoutMs } from "../../../shared/stepTimeout";
+
+const STEP_TIMEOUT_MS = stepTimeoutMs();
 
 // INVARIANT: emit-before-persist is correct only because every event for a
 // conversation is keyed by conversationId (→ one partition of conversation-events)
@@ -126,6 +125,14 @@ await subscribeAndRun({
   producer,
   topic: TOPICS.CONVERSATION_EVENTS,
   types: ["PlanGenerated", "ToolInvocationResulted", "StepTimedOut"],
+  // Only a dead-lettered PlanGenerated with no stored plan is reported here. A
+  // dead-lettered result or timeout belongs to a plan that exists; its step timeout
+  // (or normal completion) produces the user's outcome.
+  onDeadLettered: conversationFailedHook(producer, {
+    owns: "PlanGenerated",
+    stage: "orchestration",
+    when: async (record) => (await getPlan(record.conversationId!)) === null,
+  }),
   handler: (event) => handle(producer, timers, event),
 });
 

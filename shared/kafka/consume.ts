@@ -20,12 +20,28 @@ import {
 /** An unknown error is retried this many times (per process lifetime), then dead-lettered. */
 export const MAX_UNKNOWN_ATTEMPTS = 3;
 
+/**
+ * Lets a service report a poison message to the user. The wrapper calls `handle` after
+ * the DLQ record is published, inside the same serialized handler path, but only when
+ *   - the probed type of the original message is in `owns`, and
+ *   - the record has a conversationId.
+ * A service lists only the types whose failure it is responsible for reporting, so one
+ * poison message produces one user-visible event, not one per consumer group. A hook
+ * that throws is rethrown as retryable: the message is redelivered, so the DLQ record
+ * and the hook call may both be duplicated (tolerated).
+ */
+export interface DeadLetteredHook {
+  owns: readonly MessageName[];
+  handle(record: MessageDeadLettered): Promise<void>;
+}
+
 export interface ConsumeContext<N extends MessageName = MessageName> {
   topic: TopicName;
   group: string;
   service: string;
   /** The message types this service handles; everything else on the topic is skipped. */
   types: readonly N[];
+  onDeadLettered?: DeadLetteredHook;
 }
 
 export interface ConsumeDeps {
@@ -38,6 +54,16 @@ export interface ConsumeDeps {
 }
 
 export type Outcome = "handled" | "skipped" | "dead-lettered";
+
+/** The message type of a raw value, or null when it is missing, not JSON, or has no discriminator. */
+function probeType(raw: RawMessage): string | null {
+  if (raw.value === null) return null;
+  try {
+    return messageTypeOf(JSON.parse(raw.value.toString("utf8"))) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function describe(raw: RawMessage): string {
   return `topic=${raw.topic} partition=${raw.partition} offset=${raw.offset}`;
@@ -127,12 +153,29 @@ export async function processMessage<N extends MessageName>(
     } catch (cause) {
       throw new RetryableError(`failed to dead-letter ${describe(raw)}: ${(cause as Error).message}`, { cause });
     }
-    deps.attempts.delete(attemptKey);
     const e = record.payload.error;
     log.error(
       `[kafka] dead-lettered ${describe(raw)} group=${ctx.group} class=${e.class} reason=${JSON.stringify(e.reason)}`
     );
     if (err instanceof Error && err.stack) log.error(err.stack);
+
+    // Tell the user, if this service owns this kind of failure. Only after the DLQ
+    // record is safely published; a failure here is retried via redelivery.
+    const hook = ctx.onDeadLettered;
+    if (hook && record.conversationId !== null) {
+      const type = probeType(raw);
+      if (type !== null && (hook.owns as readonly string[]).includes(type)) {
+        try {
+          await hook.handle(record);
+        } catch (cause) {
+          throw new RetryableError(
+            `dead-letter hook failed for ${describe(raw)}: ${(cause as Error).message}`,
+            { cause }
+          );
+        }
+      }
+    }
+    deps.attempts.delete(attemptKey);
     return "dead-lettered";
   }
 

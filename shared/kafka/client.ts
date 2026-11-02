@@ -15,7 +15,7 @@ import {
   type MessageOf,
   type TopicMessage,
 } from "../schemas/index";
-import { processMessage, MAX_UNKNOWN_ATTEMPTS, type ConsumeDeps } from "./consume";
+import { processMessage, MAX_UNKNOWN_ATTEMPTS, type ConsumeDeps, type DeadLetteredHook } from "./consume";
 import { OutboundContractViolationError, ProducerError, toIssues } from "./errors";
 
 // ─── Singleton Kafka instance ────────────────────────────────────────────────
@@ -144,6 +144,8 @@ export interface SubscribeOptions<N extends MessageName> {
   /** The message types this service handles; the handler receives exactly those. */
   types: readonly N[];
   handler: (message: MessageOf<N>) => Promise<void>;
+  /** Report poison messages this service owns to the user (see DeadLetteredHook). */
+  onDeadLettered?: DeadLetteredHook;
 }
 
 /**
@@ -151,7 +153,7 @@ export interface SubscribeOptions<N extends MessageName> {
  * dead-letter poison, rethrow transient failures. See consume.ts for the semantics.
  */
 export async function subscribeAndRun<N extends MessageName>(opts: SubscribeOptions<N>): Promise<void> {
-  const { consumer, groupId, service, producer, topic, types, handler } = opts;
+  const { consumer, groupId, service, producer, topic, types, handler, onDeadLettered } = opts;
 
   // Retry subscribe independently: UNKNOWN_TOPIC_OR_PARTITION resolves once
   // the broker has propagated topic metadata (typically within a few seconds).
@@ -165,7 +167,7 @@ export async function subscribeAndRun<N extends MessageName>(opts: SubscribeOpti
     now: () => Date.now(),
     maxUnknownAttempts: MAX_UNKNOWN_ATTEMPTS,
   };
-  const ctx = { topic, group: groupId, service, types };
+  const ctx = { topic, group: groupId, service, types, onDeadLettered };
 
   await consumer.run({
     eachMessage: async ({ message, partition }: EachMessagePayload) => {

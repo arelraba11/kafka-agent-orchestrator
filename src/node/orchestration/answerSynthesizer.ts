@@ -6,6 +6,7 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
+import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
 import { callLLM } from "../../../shared/llm/callLLM";
 import { getHistory, appendToHistory } from "../../../shared/state/historyStore";
 import { initializeSynthStore, synthStore } from "../../../shared/state/synthStore";
@@ -42,6 +43,9 @@ await subscribeAndRun({
   producer,
   topic: TOPICS.USER_COMMANDS,
   types: ["UserQueryReceived", "SynthesizeFinalAnswerRequested"],
+  // Owns only the synthesize command. Its UserQueryReceived is a cache fill, and the
+  // router reports a poison query, so a poison query yields exactly one ConversationFailed.
+  onDeadLettered: conversationFailedHook(producer, { owns: "SynthesizeFinalAnswerRequested", stage: "synthesis" }),
   handler: async (event) => {
     if ("eventType" in event) {
       await cacheUserQuery(event, deps);

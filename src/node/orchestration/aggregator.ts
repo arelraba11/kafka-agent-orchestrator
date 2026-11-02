@@ -6,6 +6,7 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
+import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
 import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
 import type { SynthesizeFinalAnswerRequested } from "../../../shared/schemas/SynthesizeFinalAnswerRequested";
 
@@ -51,6 +52,7 @@ await subscribeAndRun({
   producer,
   topic: TOPICS.CONVERSATION_EVENTS,
   types: ["PlanCompleted"],
+  onDeadLettered: conversationFailedHook(producer, { owns: "PlanCompleted", stage: "aggregation" }),
   handler: (event) => onPlanCompleted(producer, event),
 });
 

@@ -327,3 +327,166 @@ describe("classifyError", () => {
     expect(classifyError(Object.assign(new Error("x"), { code: "ENOENT" }))).toBe("unknown");
   });
 });
+
+// ─── onDeadLettered hook ──────────────────────────────────────────────────────
+
+describe("processMessage: onDeadLettered hook", () => {
+  const poisonQuery = {
+    conversationId: CID,
+    timestamp: 1,
+    eventType: "UserQueryReceived",
+    payload: { userInput: "", sessionId: "s" }, // empty userInput violates the contract
+  };
+  const validQuery = { ...poisonQuery, payload: { userInput: "hi", sessionId: "s" } };
+
+  const userCommandsRaw = (value: unknown, over: Partial<RawMessage> = {}) =>
+    rawOf(value, { topic: TOPICS.USER_COMMANDS, ...over });
+
+  function hookCtx(owns: ("UserQueryReceived" | "SynthesizeFinalAnswerRequested")[], handle: (r: MessageDeadLettered) => Promise<void>) {
+    return {
+      topic: TOPICS.USER_COMMANDS,
+      group: "g",
+      service: "svc",
+      types: ["UserQueryReceived", "SynthesizeFinalAnswerRequested"] as const,
+      onDeadLettered: { owns, handle },
+    };
+  }
+
+  test("is called once, after the DLQ record is published, with that record", async () => {
+    const order: string[] = [];
+    const { deps, dead } = makeDeps({
+      publishDeadLetter: async (r) => {
+        order.push("dlq");
+        dead.push(r);
+      },
+    });
+    const handle = mock(async (r: MessageDeadLettered) => {
+      order.push(`hook:${r.conversationId}`);
+      expect(dead).toHaveLength(1); // the record is already published
+    });
+    const out = await processMessage(userCommandsRaw(poisonQuery), hookCtx(["UserQueryReceived"], handle), noop, deps);
+    expect(out).toBe("dead-lettered");
+    expect(handle).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["dlq", `hook:${CID}`]);
+    expect(handle.mock.calls[0][0].payload.error.class).toBe("contract-violation");
+  });
+
+  test("is not called when the DLQ publish fails (the failure is retryable)", async () => {
+    const { deps } = makeDeps({ publishDeadLetter: async () => { throw new Error("broker down"); } });
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    await expect(
+      processMessage(userCommandsRaw(poisonQuery), hookCtx(["UserQueryReceived"], handle), noop, deps)
+    ).rejects.toBeInstanceOf(RetryableError);
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  test("is not called when the record has no conversationId", async () => {
+    const { deps, dead } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    const noId = { ...poisonQuery, conversationId: "not-a-uuid" };
+    await processMessage(userCommandsRaw(noId, { key: null }), hookCtx(["UserQueryReceived"], handle), noop, deps);
+    expect(dead).toHaveLength(1);
+    expect(dead[0].conversationId).toBeNull();
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  test("a hook that throws is rethrown as retryable", async () => {
+    const { deps, dead } = makeDeps();
+    const handle = async () => { throw new Error("kafka down"); };
+    const err = await processMessage(userCommandsRaw(poisonQuery), hookCtx(["UserQueryReceived"], handle), noop, deps).catch((e) => e);
+    expect(err).toBeInstanceOf(RetryableError);
+    expect(classifyError(err)).toBe("retry");
+    expect(dead).toHaveLength(1); // the DLQ record stands; redelivery may duplicate both (tolerated)
+  });
+
+  test("ownership: with owns=[SynthesizeFinalAnswerRequested], a poison UserQueryReceived is dead-lettered but handle is NOT called", async () => {
+    const { deps, dead } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    await processMessage(userCommandsRaw(poisonQuery), hookCtx(["SynthesizeFinalAnswerRequested"], handle), noop, deps);
+    expect(dead).toHaveLength(1);
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  test("ownership: with owns=[UserQueryReceived], the same message calls handle once", async () => {
+    const { deps } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    await processMessage(userCommandsRaw(poisonQuery), hookCtx(["UserQueryReceived"], handle), noop, deps);
+    expect(handle).toHaveBeenCalledTimes(1);
+  });
+
+  test("malformed JSON never calls handle, whatever owns contains", async () => {
+    const { deps, dead } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    await processMessage(
+      userCommandsRaw("{ not json", { key: Buffer.from(CID) }),
+      hookCtx(["UserQueryReceived", "SynthesizeFinalAnswerRequested"], handle),
+      noop,
+      deps
+    );
+    await processMessage(
+      userCommandsRaw(null),
+      hookCtx(["UserQueryReceived", "SynthesizeFinalAnswerRequested"], handle),
+      noop,
+      deps
+    );
+    expect(dead.map((d) => d.payload.error.class)).toEqual(["malformed-json", "missing-value"]);
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  test("a JSON value without a discriminator never calls handle", async () => {
+    const { deps, dead } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    await processMessage(userCommandsRaw({ conversationId: CID, hello: 1 }), hookCtx(["UserQueryReceived"], handle), noop, deps);
+    expect(dead).toHaveLength(1);
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  test("an outbound violation while handling an owned input type calls handle", async () => {
+    const { deps, dead } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    const out = await processMessage(
+      userCommandsRaw(validQuery),
+      hookCtx(["UserQueryReceived"], handle),
+      async () => {
+        throw new OutboundContractViolationError("bad PlanGenerated", [], "PlanGenerated", TOPICS.CONVERSATION_EVENTS);
+      },
+      deps
+    );
+    expect(out).toBe("dead-lettered");
+    expect(dead[0].payload.error.class).toBe("outbound-contract-violation");
+    expect(handle).toHaveBeenCalledTimes(1);
+  });
+
+  test("a handled message and a skipped type never call handle", async () => {
+    const { deps } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    await processMessage(userCommandsRaw(validQuery), hookCtx(["UserQueryReceived"], handle), noop, deps);
+    await processMessage(
+      userCommandsRaw({ ...validQuery, eventType: "SomethingNew" }),
+      hookCtx(["UserQueryReceived"], handle),
+      noop,
+      deps
+    );
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  test("an unknown-exhausted error calls handle only on the final attempt", async () => {
+    const { deps } = makeDeps();
+    const handle = mock(async (_r: MessageDeadLettered) => {});
+    const c = hookCtx(["UserQueryReceived"], handle);
+    const raw = userCommandsRaw(validQuery);
+    const boom = async () => { throw new TypeError("bug"); };
+    await expect(processMessage(raw, c, boom, deps)).rejects.toThrow();
+    await expect(processMessage(raw, c, boom, deps)).rejects.toThrow();
+    expect(handle).not.toHaveBeenCalled();
+    expect(await processMessage(raw, c, boom, deps)).toBe("dead-lettered");
+    expect(handle).toHaveBeenCalledTimes(1);
+  });
+
+  test("no hook configured: dead-lettering is unchanged", async () => {
+    const { deps, dead } = makeDeps();
+    const out = await processMessage(userCommandsRaw(poisonQuery), { ...hookCtx([], noop), onDeadLettered: undefined }, noop, deps);
+    expect(out).toBe("dead-lettered");
+    expect(dead).toHaveLength(1);
+  });
+});
