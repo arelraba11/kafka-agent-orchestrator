@@ -7,23 +7,33 @@ import {
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { callLLM } from "../../../shared/llm/callLLM";
-import { synthesisPrompt } from "../../../shared/prompts/synthesisPrompt";
-import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
 import { getHistory, appendToHistory } from "../../../shared/state/historyStore";
+import { initializeSynthStore, synthStore } from "../../../shared/state/synthStore";
+import { cacheUserQuery, synthesize, type SynthesizeDeps } from "./synthesize";
 
-// ─── User query cache ─────────────────────────────────────────────────────────
-// user-commands carries both UserQueryReceived and SynthesizeFinalAnswerRequested.
-// We cache userInput by conversationId so the synthesizer can include the original
-// question in the LLM prompt. sessionId comes from the command itself.
+// Service shell: wires Kafka, the stores and the real LLM into synthesize.ts.
+// user-commands carries both UserQueryReceived (cached in .synth-store so the question
+// survives a restart) and SynthesizeFinalAnswerRequested (synthesized). The ordering
+// rules live in synthesize.ts.
 
-const userQueryCache = new Map<string, { userInput: string }>();
+const SYNTHESIS_LLM = { budgetMs: 60_000, maxAttempts: 3 } as const;
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+await initializeSynthStore();
+console.log("[synthesizer] SynthStore initialized");
 
 const producer = await createProducer();
 const consumer = await createConsumer("answer-synthesizer");
 
 registerShutdown([producer, consumer]);
+
+const deps: SynthesizeDeps = {
+  store: synthStore,
+  callLLM: (prompt) => callLLM(prompt, SYNTHESIS_LLM),
+  publish: (message) => publish(producer, TOPICS.CONVERSATION_EVENTS, message),
+  getHistory,
+  appendToHistory,
+  now: () => Date.now(),
+};
 
 await subscribeAndRun({
   consumer,
@@ -33,46 +43,11 @@ await subscribeAndRun({
   topic: TOPICS.USER_COMMANDS,
   types: ["UserQueryReceived", "SynthesizeFinalAnswerRequested"],
   handler: async (event) => {
-    // Cache user queries as they arrive on user-commands
     if ("eventType" in event) {
-      userQueryCache.set(event.conversationId, { userInput: event.payload.userInput });
+      await cacheUserQuery(event, deps);
       return;
     }
-
-    const { conversationId, sessionId, timestamp: planCompletedAt, payload } = event;
-
-    console.log(`[synthesizer] conversationId=${conversationId} results=${payload.results.length}`);
-
-    const cached = userQueryCache.get(conversationId);
-    const userQuery = cached?.userInput ?? "";
-    userQueryCache.delete(conversationId);
-
-    const history = await getHistory(sessionId);
-
-    const toolResults = payload.results.map((item) => ({
-      tool: item.toolName,
-      // RAG results carry retrieved text in `context`; other tools use `value`
-      result: String(item.result.value ?? item.result.context ?? JSON.stringify(item.result)),
-    }));
-
-    const answer = await callLLM(synthesisPrompt(userQuery, toolResults, history), { budgetMs: 60_000, maxAttempts: 3 });
-
-    const finalEvent: FinalAnswerSynthesized = {
-      conversationId,
-      timestamp: Date.now(),
-      eventType: "FinalAnswerSynthesized",
-      payload: { answer },
-    };
-
-    await publish(producer, TOPICS.CONVERSATION_EVENTS, finalEvent);
-
-    if (sessionId) {
-      await appendToHistory(sessionId, conversationId, userQuery, answer);
-    }
-
-    const synthesizerLatency = Date.now() - planCompletedAt;
-    console.log(`[synthesizer] conversationId=${conversationId} answer="${answer}"`);
-    console.log(`[Benchmark] conversationId=${conversationId} synthesizerLatency=${synthesizerLatency}ms`);
+    await synthesize(event, deps);
   },
 });
 
