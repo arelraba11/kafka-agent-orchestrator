@@ -50,6 +50,8 @@ weather in haifa
 
 The UI receives the weather answer for the second query, with no manual Kafka intervention and no manual restart. If the worker could not come back within the step timeout, the UI would have shown "The weather tool didn't respond within 30 s.", and the late result would be logged `ignored reason=plan-terminal` (to hold a worker down on purpose, pause it with `kill -STOP`: Scenario 6).
 
+**Evidence:** `test/integration/rag.test.ts` for the Python RAG worker: R1a (a worker that has not sent to the topic yet cannot get metadata from a paused broker: `send()` gives up after `KAFKA_MAX_BLOCK_MS`, the worker exits non-zero and the result is redelivered after the restart), R1b (a worker that has sent before has the metadata, so `send()` returns at once and only the acknowledgement can fail: it exits before the commit point, `rag:after-send`, and the result is redelivered; it fails if the worker stops waiting for the acknowledgement), R2 (killed after the send, before the commit: the result is sent twice and the orchestrator ignores the duplicate) and R0 (a RAG price feeds `{{step_0.result}}` as `1199`, not the first number in the context). The tool workers written in TypeScript share the consumer wrapper that the orchestrator and synthesizer crash tests exercise. The suite sets `KAFKA_MAX_BLOCK_MS=3000` for R1a; with the default (60000) a RAG producer that has not yet sent to a topic blocks up to 60 s on a down broker before it exits.
+
 ---
 
 ## Scenario 2 — Orchestrator Crash
@@ -159,7 +161,7 @@ The UI receives exactly one answer, and `aggregator.log` shows no second `PlanCo
 To see the live-plan case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. The orchestrator logs `ignored reason=duplicate-step` and the plan finishes normally. No automated integration test covers this yet; phase 5 adds them.
 
 
-**Evidence:** `test/integration/idempotency.test.ts` › D1 (a duplicate result while the plan is live does not re-dispatch the next step).
+**Evidence:** `test/integration/idempotency.test.ts` › D1 (a duplicate result while the plan is live does not re-dispatch the next step), D2 (a duplicate result after completion changes nothing downstream) and D3 (a duplicate `PlanGenerated`, while running and after the answer, dispatches nothing twice). `test/integration/happy.test.ts` › H2 (a two-step plan runs in order).
 
 ---
 
@@ -254,7 +256,7 @@ Each service logs one line per record, for example `[kafka] dead-lettered topic=
 **Not covered:** a dead letter is not replayed (there is no replay tool). A dead-lettered `ToolInvocationRequested` or `ToolInvocationResulted` is not reported by a hook; its plan fails through the step timeout (Scenario 6). Poison messages that a service owns are also reported to the user (Scenario 9).
 
 
-**Evidence:** `test/integration/poison.test.ts` › P2 (malformed, contract-violating and key-mismatched records on every partition of `conversation-events` are dead-lettered once per group that reads the type) and P-flow (the partitions keep flowing afterwards). `test/integration/retryable.test.ts` › X1 (a producer failure is retried, never dead-lettered).
+**Evidence:** `test/integration/poison.test.ts` › P2 (malformed, contract-violating and key-mismatched records on every partition of `conversation-events` are dead-lettered once per group that reads the type) and P-flow (the partitions keep flowing afterwards). `test/integration/retryable.test.ts` › X1 (a producer failure is retried, never dead-lettered). Also P1 (poison on `user-commands`: both groups dead-letter it, and the synthesizer reports its own command once) and P3 (poison on `tool-invocation-requests`: all five worker groups, the Python one included). A record with unknown extra fields is not poison: `idempotency` › E1 (TypeScript consumers) and `rag` › E2 (the Python worker).
 
 ---
 
@@ -326,7 +328,7 @@ The restarted orchestrator logs `rescheduled 1 step timer(s)` and publishes `Ste
 Timers live in the orchestrator: no step times out while it is down.
 
 
-**Evidence:** `test/integration/timeouts.test.ts` › T1 (step timeout, `PlanFailed{code:"step-timeout"}`) and T3 (a restarted orchestrator re-arms the timer with the original deadline).
+**Evidence:** `test/integration/timeouts.test.ts` › T1 (step timeout, `PlanFailed{code:"step-timeout"}`), T2 (a result that arrives after the timeout is ignored) and T3 (a restarted orchestrator re-arms the timer with the original deadline).
 
 ---
 
@@ -366,7 +368,7 @@ bun -e 'Bun.serve({port:11999,fetch:()=>new Promise(()=>{})})' &
 `ConversationFailed{stage:"synthesis"}` with `llm-misconfigured`, `llm-unavailable` or `empty-answer` respectively. The `dead-letter-queue` gains no record, and every consumer group, including `answer-synthesizer`, has lag 0.
 
 
-**Evidence:** `test/integration/llm-failures.test.ts` › L2 (5xx on every attempt → `llm-unavailable`) and L3 (401 → `llm-misconfigured`, one call). The empty-answer, timeout, `Retry-After` and router-fallback cases are not yet integration-tested (planned: phase 5 Part B).
+**Evidence:** `test/integration/llm-failures.test.ts` › L1 (429 with `Retry-After`: retried after the wait, then answers), L2 (5xx on every attempt → `llm-unavailable`), L3 (401 → `llm-misconfigured`, one call), L4 (empty answers → `empty-answer`), L5 (timeouts → `llm-unavailable` inside the budget), L6 (a `Retry-After` beyond the budget fails fast) and L7 (router LLM failure → regex fallback, the conversation still answers).
 
 ---
 
@@ -399,7 +401,7 @@ jq --arg c "$CID" '[.[] | .[] | select(.conversationId==$c)] | length' history.j
 ```
 
 
-**Evidence:** `test/integration/idempotency.test.ts` › D4 (one LLM call, one history entry) and `test/integration/crash-synthesizer.test.ts` › S3 (synthesizer killed after publishing, before history and `done`).
+**Evidence:** `test/integration/idempotency.test.ts` › D4 (one LLM call, one history entry) and `test/integration/crash-synthesizer.test.ts` › S1 (killed after the LLM call, before the memo: asked again, one answer), S2 (killed after the memo, before the publish: the memo is published), S3 (killed after publishing, before history and `done`) and S4 (killed after the history append, before the `done` batch: the answer is republished, the history is not duplicated).
 
 ---
 
@@ -430,6 +432,8 @@ docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server lo
 Two `contract-violation` DLQ records (`router-plan-service` and `answer-synthesizer`), and **exactly one** `ConversationFailed{stage:"routing", code:"internal-error"}`, none with `stage:"synthesis"`: the synthesizer's `UserQueryReceived` consumption is a cache fill, so the router alone owns that failure. `router.log` shows `ConversationFailed stage=routing code=internal-error (dead-lettered UserQueryReceived)`. In the UI the user would see "Something went wrong while planning your request (ref `<first 8 characters of the id>`)."
 
 The same pattern with a contract-violating `PlanGenerated` (`"steps":[]`) gives `ConversationFailed{stage:"orchestration"}` (the orchestrator reports only when no plan exists), and with a contract-violating `PlanCompleted` it gives `stage:"aggregation"`.
+
+**Evidence:** `test/integration/poison.test.ts` › P4 (a poison `UserQueryReceived`: DLQ records from the router and the synthesizer, exactly one `ConversationFailed{routing}`, none with `stage:"synthesis"`), P1 (a poison synthesize command: one `ConversationFailed{synthesis}` per command), PO1 (a poison `PlanGenerated` with no plan: one `ConversationFailed{orchestration}`) and PO2 (with a plan that already exists: dead-lettered, not reported).
 
 ---
 
@@ -487,6 +491,8 @@ RUN_DIR=$TMPDIR/run bun run stop
 ### Expected outcome
 
 A crashed service is back in about a second and the next request is answered. If the supervisor gave up on a service, requests that need it fail with the step timeout (tools) or the client timeout (Scenario 12). `bun run stop` leaves unrelated processes alone (try `bun run idle` from a directory whose `package.json` has `"idle": "sleep 600"`: it survives) and does not delete `.plan-store/LOCK`.
+
+**Evidence:** `test/integration/supervisor.test.ts` › SV1 (the suite starts `scripts/supervisor.ts` with its own `RUN_DIR` and `LOG_DIR`, kills `weather` with `kill -9 $(cat $RUN_DIR/weather.pid)`, waits for a new pid and a stable `weather-tool-worker` group, gets an answer, and checks that `scripts/stop.ts` leaves no stray pid). The give-up path is covered by the unit tests of `supervisorPolicy.ts`.
 
 ---
 
