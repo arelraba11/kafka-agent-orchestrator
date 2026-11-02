@@ -45,6 +45,8 @@ export interface Services {
   restart(name: ServiceName, envOverrides?: Record<string, string>): Promise<void>;
   /** Resolves when the current (or last) process of `name` ends. */
   exited(name: ServiceName): Promise<ExitInfo>;
+  /** Like exited(), but fails with `what` and the service log after `timeoutMs`. */
+  waitExit(name: ServiceName, what: string, timeoutMs?: number): Promise<ExitInfo>;
   pid(name: ServiceName): number;
   isRunning(name: ServiceName): boolean;
   faults(name: ServiceName): Faults;
@@ -226,6 +228,15 @@ export async function createServices(
       await start(name, overrides);
     },
     exited: (name) => get(name).exit,
+    async waitExit(name, what, timeoutMs = 15_000) {
+      const p = get(name);
+      await waitFor(() => p.info !== null, {
+        timeoutMs,
+        what: `service ${name} to exit (${what})`,
+        context: () => `  log ${logPath(name)}:\n${logTail(name)}`,
+      });
+      return p.info!;
+    },
     pid: (name) => get(name).proc.pid,
     isRunning: (name) => procs.get(name)?.info === null,
     faults,

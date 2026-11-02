@@ -12,8 +12,8 @@ export interface Faults {
   crashAt(point: FaultPoint, decision?: string): Record<string, string>;
   /** Env entries that hold the first matching call at `point`. */
   holdAt(point: FaultPoint, decision?: string): Record<string, string>;
-  /** How many times the point was reached. */
-  hits(point: FaultPoint): number;
+  /** How many times the point was reached (with `decision`: only calls made with that decision). */
+  hits(point: FaultPoint, decision?: string): number;
   reached(point: FaultPoint): boolean;
   waitReached(point: FaultPoint, timeoutMs?: number): Promise<void>;
   release(point: FaultPoint): void;
@@ -30,9 +30,11 @@ export function faultsFor(dir: string): Faults {
     dir,
     crashAt: (point, decision) => ({ FAULT_DIR: dir, FAULT_CRASH: spec(point, decision) }),
     holdAt: (point, decision) => ({ FAULT_DIR: dir, FAULT_HOLD: spec(point, decision) }),
-    hits(point) {
+    hits(point, decision) {
       const f = file(point, "hits");
-      return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).length : 0;
+      if (!existsSync(f)) return 0;
+      const lines = readFileSync(f, "utf8").split("\n").filter(Boolean);
+      return decision === undefined ? lines.length : lines.filter((l) => l === decision).length;
     },
     reached: (point) => existsSync(file(point, "reached")),
     async waitReached(point, timeoutMs = 15_000) {

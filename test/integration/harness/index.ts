@@ -6,7 +6,10 @@ import { createServices, type ServiceName, type Services } from "./services";
 import { settle } from "./settle";
 import { readFileSync } from "fs";
 import { HistoryFileSchema, type HistoryMessage } from "../../../shared/state/historyStore";
-import { ask } from "./wsClient";
+import { ask, query, type Query } from "./wsClient";
+import type { Producer } from "kafkajs";
+import { testKafka } from "./broker";
+import type { TopicName } from "../../../shared/topics";
 
 export { newCid, short, tag, token } from "./ids";
 export { waitFor } from "./wait";
@@ -19,6 +22,10 @@ export interface Harness {
   services: Services;
   /** Sends a query over the web server's WebSocket. */
   ask(input: string, timeoutMs?: number): ReturnType<typeof ask>;
+  /** Sends a query without waiting for the answer (see Query). */
+  query(input: string, timeoutMs?: number): Query;
+  /** Produces one raw record to a (logical) topic of this namespace. `partition` forces a partition. */
+  produce(topic: TopicName, key: string | null, value: string, partition?: number): Promise<void>;
   /** The messages in history.json that belong to `cid` (parsed with HistoryFileSchema); [] if the file does not exist. */
   history(cid: string): HistoryMessage[];
   /** Waits for quiescence: every live group at lag 0 and the observer caught up. */
@@ -41,6 +48,7 @@ export interface HarnessOptions {
  */
 export function useHarness(name: string, options: HarnessOptions): Harness {
   const h = {} as Harness;
+  let producer: Producer | undefined;
 
   beforeAll(async () => {
     h.ns = await createNamespace(name);
@@ -50,6 +58,15 @@ export function useHarness(name: string, options: HarnessOptions): Harness {
     // start in parallel: group joins are independent
     await Promise.all(options.start.map((s) => h.services.start(s)));
     h.ask = (input, timeoutMs) => ask(h.services.webPort, input, timeoutMs);
+    h.query = (input, timeoutMs) => query(h.services.webPort, input, timeoutMs);
+    const p = (producer = testKafka(`producer-${name}`).producer());
+    await p.connect();
+    h.produce = async (topic, key, value, partition) => {
+      await p.send({
+        topic: h.ns.physical(topic),
+        messages: [{ key, value, ...(partition !== undefined ? { partition } : {}) }],
+      });
+    };
     h.history = (cid) => {
       let text: string;
       try {
@@ -76,6 +93,7 @@ export function useHarness(name: string, options: HarnessOptions): Harness {
 
   afterAll(async () => {
     await h.services?.stopAll();
+    await producer?.disconnect();
     await h.observer?.stop();
     await h.fake?.stop();
     await h.ns?.close();
