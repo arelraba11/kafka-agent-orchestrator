@@ -4,12 +4,24 @@
  */
 
 import net from "net";
+import { spawn } from "child_process";
 import { join } from "path";
 import { mkdirSync, openSync, closeSync } from "fs";
 import { DEFAULT_OLLAMA_MODEL } from "../shared/llm/providers";
+import { findLiveOwnedPids, isOwnedPid, readPidFile, resolveDirs } from "./lib/pidFiles";
+import { hasModel, shouldPullModel } from "./lib/startChecks";
 
-const ROOT    = join(import.meta.dir, "..");
-const LOG_DIR = join(ROOT, "scripts/logs/services");
+const ROOT = join(import.meta.dir, "..");
+const { runDir: RUN_DIR, logDir: LOG_DIR } = resolveDirs(ROOT, process.env);
+
+// ─── Already running? ─────────────────────────────────────────────────────────
+
+const alreadyRunning = findLiveOwnedPids(RUN_DIR, ROOT);
+if (alreadyRunning.length > 0) {
+  const list = alreadyRunning.map(({ name, pid }) => `${name}=${pid}`).join(" ");
+  console.error(`ERROR: already running (${list}; pid files in ${RUN_DIR}). Run 'bun run stop' first.`);
+  process.exit(1);
+}
 
 // ─── Kafka readiness ──────────────────────────────────────────────────────────
 
@@ -43,68 +55,101 @@ async function ensureTopics(): Promise<void> {
   console.log("Creating/verifying topics...");
   const proc = Bun.spawn(["bash", "infra/create-topics.sh"], {
     cwd: ROOT,
-    stdout: "ignore",
-    stderr: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  await proc.exited;
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (proc.exitCode !== 0) {
+    console.error(`ERROR: topic creation failed (exit ${proc.exitCode}). Is the 'kafka' container running?`);
+    console.error(`${stdout}${stderr}`.trim());
+    process.exit(1);
+  }
   console.log("Topics ready.");
 }
 
 // ─── Ollama model pull ────────────────────────────────────────────────────────
 
-async function pullOllamaModel(): Promise<void> {
+async function ensureOllamaModel(provider: string): Promise<void> {
+  if (!shouldPullModel(provider)) {
+    console.log(`Skipping Ollama model pull (LLM_PROVIDER=${provider}).`);
+    return;
+  }
+
   const model = process.env.OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL;
   const host  = process.env.OLLAMA_HOST  ?? "http://localhost:11434";
+
+  const fail = (why: string): void => {
+    if (provider === "ollama") {
+      console.error(`ERROR: ${why} LLM_PROVIDER=ollama has no fallback.`);
+      process.exit(1);
+    }
+    console.warn(`WARNING: ${why} Calls will fall back to OpenAI.`);
+  };
+
   console.log(`Checking Ollama at ${host}...`);
   try {
-    const res = await fetch(`${host}/api/tags`);
-    if (!res.ok) throw new Error(`status ${res.status}`);
-    console.log(`Ollama is running — pulling model '${model}' (skipped if already present)...`);
-    await fetch(`${host}/api/pull`, {
+    const tags = await fetch(`${host}/api/tags`);
+    if (!tags.ok) throw new Error(`/api/tags returned status ${tags.status}`);
+    if (hasModel(await tags.json(), model)) {
+      console.log(`Ollama model '${model}' already present.`);
+      return;
+    }
+
+    console.log(`Pulling Ollama model '${model}' (this can take a while)...`);
+    const res = await fetch(`${host}/api/pull`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: model }),
+      body: JSON.stringify({ name: model, stream: false }),
     });
+    if (!res.ok) throw new Error(`pull returned status ${res.status}: ${(await res.text()).trim()}`);
     console.log(`Ollama model '${model}' ready.`);
-  } catch {
-    console.log("Ollama not reachable — skipping model pull (will fall back to OpenAI).");
+  } catch (err) {
+    fail(`Ollama model '${model}' is not available at ${host} (${err instanceof Error ? err.message : String(err)}).`);
   }
 }
 
-// ─── Service launcher ─────────────────────────────────────────────────────────
+// ─── Supervisor ───────────────────────────────────────────────────────────────
 
-function startService(label: string, cmd: string[], logFile: string): void {
-  const fd   = openSync(join(LOG_DIR, logFile), "w");
-  const proc = Bun.spawn(cmd, { cwd: ROOT, stdout: fd, stderr: fd });
-  closeSync(fd); // parent closes its copy; child keeps its own
-  console.log(`Started ${label} (PID ${proc.pid})`);
+async function startSupervisor(): Promise<void> {
+  mkdirSync(LOG_DIR, { recursive: true });
+  const fd = openSync(join(LOG_DIR, "supervisor.log"), "a");
+  const child = spawn("bun", [join(ROOT, "scripts/supervisor.ts")], {
+    cwd: ROOT,
+    detached: true,
+    stdio: ["ignore", fd, fd],
+    env: { ...process.env, RUN_DIR, LOG_DIR },
+  });
+  closeSync(fd);
+  child.unref();
+
+  // The supervisor writes its pid file once it is up; wait for it so a failed start is loud.
+  for (let i = 0; i < 50; i++) {
+    const pid = readPidFile(RUN_DIR, "supervisor");
+    if (pid !== null && isOwnedPid(pid, ROOT)) {
+      console.log(`Supervisor started (PID ${pid}); services start under it.`);
+      return;
+    }
+    await Bun.sleep(100);
+  }
+  console.error(`ERROR: the supervisor did not come up. See ${join(LOG_DIR, "supervisor.log")}.`);
+  process.exit(1);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-mkdirSync(LOG_DIR, { recursive: true });
-
 await waitForKafka();
 await ensureTopics();
-await pullOllamaModel();
-
-startService("webServer",         ["bun", "run", "web"],         "webserver.log");
-startService("routerService",     ["bun", "run", "router"],      "router.log");
-startService("orchestrator",      ["bun", "run", "orchestrator"],"orchestrator.log");
-startService("aggregator",        ["bun", "run", "aggregator"],  "aggregator.log");
-startService("mathApp",           ["bun", "run", "math"],        "math.log");
-startService("weatherApp",        ["bun", "run", "weather"],     "weather.log");
-startService("exchangeApp",       ["bun", "run", "exchange"],    "exchange.log");
-startService("generalChatApp",    ["bun", "run", "chat"],        "chat.log");
-startService("answerSynthesizer", ["bun", "run", "synthesizer"], "answer.log");
-startService("rag_retriever",     [
-  join(ROOT, "src/python/venv/bin/python"),
-  "-u", "src/python/rag/rag_retriever.py",
-], "rag.log");
+await ensureOllamaModel(process.env.LLM_PROVIDER?.trim() || "auto");
+await startSupervisor();
 
 console.log(`
 SERVICES STARTED
-Logs in scripts/logs/services/
+Logs in ${LOG_DIR}/ (append mode; supervisor events in supervisor.log)
+Pids in ${RUN_DIR}/
 
 Web server: http://localhost:3001  (log: webserver.log)
 

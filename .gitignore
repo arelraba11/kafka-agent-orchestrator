@@ -23,6 +23,7 @@ history.json.corrupt-*
 history.json.*.tmp
 .plan-store/
 .synth-store/
+.run/
 
 # ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/

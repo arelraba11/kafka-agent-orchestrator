@@ -1,42 +1,66 @@
 /**
- * stop.ts — Stop all services
+ * stop.ts — Stop the services started by `bun run start`
  * Usage: bun run stop
+ *
+ * Signals only pids recorded in $RUN_DIR (default <repo>/.run) whose command line contains
+ * this repo's path. No pkill, no vite kill, no LevelDB LOCK deletion.
  */
 
 import { join } from "path";
-import { existsSync, rmSync } from "fs";
+import { isAlive, isOwnedPid, listPidFiles, readPidFile, removePidFile, resolveDirs } from "./lib/pidFiles";
 
 const ROOT = join(import.meta.dir, "..");
+const { runDir: RUN_DIR } = resolveDirs(ROOT, process.env);
 
-async function killGraceful(label: string, pattern: string): Promise<void> {
-  const term = Bun.spawn(["pkill", "-TERM", "-f", pattern], { cwd: ROOT });
-  await term.exited;
+// The supervisor waits up to 5 s for its children before SIGKILL, so allow it a little longer.
+const SUPERVISOR_EXIT_WAIT_MS = 10_000;
+const CHILD_EXIT_WAIT_MS = 5_000;
 
-  if (term.exitCode === 0) {
-    console.log(`  [SIGTERM] ${label}`);
-    await Bun.sleep(1000);
-    const kill = Bun.spawn(["pkill", "-KILL", "-f", pattern], { cwd: ROOT });
-    await kill.exited;
-    if (kill.exitCode === 0) {
-      console.log(`  [SIGKILL] ${label} (did not exit cleanly)`);
-    }
-  } else {
-    console.log(`  [skip]    ${label} — not running`);
+async function waitForExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return true;
+    await Bun.sleep(100);
+  }
+  return !isAlive(pid);
+}
+
+/** SIGTERM, wait, SIGKILL — for a pid that already passed the ownership check. */
+async function terminate(label: string, pid: number, waitMs: number): Promise<void> {
+  process.kill(pid, "SIGTERM");
+  console.log(`  [SIGTERM] ${label} (pid ${pid})`);
+  if (await waitForExit(pid, waitMs)) return;
+  try {
+    process.kill(pid, "SIGKILL");
+    console.log(`  [SIGKILL] ${label} (pid ${pid}, did not exit cleanly)`);
+  } catch {
+    // exited in between
   }
 }
 
-console.log("\n=== Stopping all project services ===\n");
+console.log("\n=== Stopping project services ===\n");
 
-await killGraceful("bun services",    "bun run");
-await killGraceful("bun ts runner",   "bun src/");
-await killGraceful("vite dev server", "vite");
-await killGraceful("rag_retriever",   "rag_retriever.py");
+// 1. The supervisor stops its own children and removes the pid files.
+const supervisorPid = readPidFile(RUN_DIR, "supervisor");
+if (supervisorPid === null) {
+  console.log("  [skip]    supervisor — not running");
+} else if (!isAlive(supervisorPid)) {
+  console.log(`  [skip]    supervisor — pid ${supervisorPid} is not running (stale pid file)`);
+} else if (isOwnedPid(supervisorPid, ROOT)) {
+  await terminate("supervisor", supervisorPid, SUPERVISOR_EXIT_WAIT_MS);
+} else {
+  console.log(`  [skip]    supervisor — pid ${supervisorPid} is not a process of this repo`);
+}
+removePidFile(RUN_DIR, "supervisor");
 
-// LevelDB lock cleanup
-const lockFile = join(ROOT, ".plan-store/LOCK");
-if (existsSync(lockFile)) {
-  rmSync(lockFile);
-  console.log("  [clean]   removed stale LevelDB lock (.plan-store/LOCK)");
+// 2. Fallback for children the supervisor did not get to (e.g. it was killed with -9).
+for (const { name, pid } of listPidFiles(RUN_DIR)) {
+  if (isOwnedPid(pid, ROOT)) {
+    await terminate(name, pid, CHILD_EXIT_WAIT_MS);
+  } else if (isAlive(pid)) {
+    console.log(`  [skip]    ${name} — pid ${pid} is not a process of this repo (stale pid file)`);
+  }
+  removePidFile(RUN_DIR, name);
 }
 
-console.log("\n=== All services stopped ===\n");
+console.log("\n=== Done ===\n");
