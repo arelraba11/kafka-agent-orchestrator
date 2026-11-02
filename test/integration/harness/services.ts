@@ -71,6 +71,10 @@ export interface Services {
   pid(name: ServiceName): number;
   isRunning(name: ServiceName): boolean;
   faults(name: ServiceName): Faults;
+  /** The suite env every service shares (no FAULT_DIR, no LLM endpoint): for a process that starts services itself. */
+  sharedEnv(overrides?: Record<string, string>): Record<string, string>;
+  /** The member ids of `name`'s group once it is Stable and covers every partition; null otherwise. */
+  groupMembers(name: ServiceName): Promise<Set<string> | null>;
   /** The groups of every service that should be running (for settle). */
   liveGroups(): LiveGroup[];
   /** Restarts every expected service that is not running (a test killed it). Returns their names. */
@@ -124,8 +128,8 @@ export async function createServices(
     }
   };
 
-  function buildEnv(name: ServiceName, overrides: Record<string, string>): Record<string, string> {
-    const env: Record<string, string> = {
+  function sharedEnv(overrides: Record<string, string> = {}): Record<string, string> {
+    return {
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
       KAFKAJS_NO_PARTITIONER_WARNING: "1",
@@ -143,14 +147,19 @@ export async function createServices(
       SYNTH_STORE_PATH: ns.paths.synthStore,
       HISTORY_PATH: ns.paths.history,
       WEB_PORT: String(webPort),
-      FAULT_DIR: faults(name).dir,
       STEP_TIMEOUT_MS: "20000",
       LLM_PROVIDER: "openai",
       LLM_ATTEMPT_TIMEOUT_MS: "1000",
       LLM_ROUTER_BUDGET_MS: "3000",
       LLM_SYNTH_BUDGET_MS: "8000",
       RAG_SEND_TIMEOUT_S: "3",
+      ...opts.env,
+      ...overrides,
     };
+  }
+
+  function buildEnv(name: ServiceName, overrides: Record<string, string>): Record<string, string> {
+    const env: Record<string, string> = { ...sharedEnv(), FAULT_DIR: faults(name).dir };
     if (name === "router" || name === "synthesizer") {
       env.OPENAI_API_KEY = FAKE_API_KEY;
       env.OPENAI_BASE_URL = `${fake.baseUrl}/${name === "router" ? "router" : "synth"}/v1`;
@@ -238,6 +247,8 @@ export async function createServices(
   const services: Services = {
     webPort,
     start,
+    sharedEnv,
+    groupMembers,
     async kill(name, signal = "SIGKILL") {
       const p = get(name);
       if (p.info === null) p.proc.kill(signal);
