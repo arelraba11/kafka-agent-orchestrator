@@ -104,19 +104,9 @@ Readers are tolerant: unknown fields are accepted and stripped, so an additive c
 
 **`MessageDeadLettered`** (`dead-letter-queue`, keyed by the original key): `{ eventType, schemaVersion: 1, conversationId (null if unparseable), timestamp, payload: { source: { topic, partition, offset, key, timestamp }, consumer: { group, service }, error: { class, name, reason, issues?, outbound?, attempts }, originalValue: { encoding: "utf8" | "base64", data, truncated } | null } }`. `error.class` is one of `malformed-json`, `missing-value`, `contract-violation`, `outbound-contract-violation`, `key-mismatch`, `handler-non-retryable`, `unknown-exhausted`. For an `outbound-contract-violation`, `originalValue` is the valid input and `issues` and `outbound` describe the message the handler tried to produce. `originalValue` is cut at 512 KiB so a record always fits the broker's message limit.
 
-**Failure handling.** Handlers signal what should happen by what they throw (`shared/kafka/errors.ts`): `RetryableError` subclasses (`StoreError`, `ProducerError`) are redelivered without limit and never dead-lettered; `NonRetryableError` subclasses are dead-lettered and the offset is committed; any other error is retried up to 3 times (counter in memory, reset by a restart) and then dead-lettered as `unknown-exhausted`. Pure code is wrapped in `nonRetryable(...)`. In the orchestrator, every side effect goes through `publish()` or the plan store, which throw retryable errors, and validation and pure code run before any emit or persist, so a dead-lettered input has produced no partial effects there. The synthesizer also writes `history.json` and calls the LLM. Its LLM failures are not exceptions: `callLLM` throws `LlmError` (a `NonRetryableError`, after its own bounded retries), and the synthesizer catches it and turns it into a `ConversationFailed` outcome, so Kafka never redelivers an LLM failure. Its other effects follow the publish → persist order described under AnswerSynthesizer, and every I/O failure there is retryable.
+**Failure handling.** Handlers signal what should happen by what they throw (`shared/kafka/errors.ts`): `RetryableError` subclasses (`StoreError`, `ProducerError`) are redelivered without limit and never dead-lettered; `NonRetryableError` subclasses are dead-lettered and the offset is committed; any other error is retried up to 3 times (counter in memory, reset by a restart) and then dead-lettered as `unknown-exhausted`. Pure code is wrapped in `nonRetryable(...)`. `callLLM` throws `LlmError` (a `NonRetryableError`) and the synthesizer catches it, so Kafka never redelivers an LLM failure. What each failure looks like to the user, and the tests that show it, are in the README's [Failure handling](../README.md#failure-handling) and [Contracts](../README.md#contracts) sections.
 
-**Reporting poison messages to the user.** `subscribeAndRun` accepts `onDeadLettered: { owns, handle }`. After the DLQ record is published, in the same serialized handler path, the wrapper calls `handle(record)` only if the probed type of the original message (`messageTypeOf`; null for a missing value or non-JSON) is in `owns` and the record has a `conversationId`. A hook that throws is rethrown as retryable; the resulting duplicate DLQ record and duplicate hook call are tolerated. A service lists only the types whose failure it is responsible for, so one poison message yields one user-visible event:
-
-| Service | Owns | Reports |
-|---|---|---|
-| router | `UserQueryReceived` (inbound violations, and an outbound `PlanGenerated` violation raised while handling it) | `ConversationFailed{stage:"routing", code:"internal-error"}` |
-| orchestrator | `PlanGenerated`, only if `getPlan(cid)` is null | `ConversationFailed{stage:"orchestration"}` |
-| aggregator | `PlanCompleted` | `ConversationFailed{stage:"aggregation"}` |
-| synthesizer | `SynthesizeFinalAnswerRequested` only (its `UserQueryReceived` is a cache fill; the router reports that one) | `ConversationFailed{stage:"synthesis"}` |
-| webServer | `FinalAnswerSynthesized`, `PlanFailed`, `ConversationFailed` | no event; a direct error frame if the conversation is pending |
-
-A dead-lettered `ToolInvocationRequested`, `ToolInvocationResulted` or `StepTimedOut` is not reported by the hook: the step timeout produces that failure. Tool workers do not use the hook.
+**Reporting poison messages to the user.** `subscribeAndRun` accepts `onDeadLettered: { owns, handle }`. After the DLQ record is published, in the same serialized handler path, the wrapper calls `handle(record)` only if the probed type of the original message (`messageTypeOf`; null for a missing value or non-JSON) is in `owns` and the record has a `conversationId`. A hook that throws is rethrown as retryable. The ownership table is `shared/kafka/failureOwnership.ts`; who owns which type, and the rule that the orchestrator reports a poison `PlanGenerated` only when no plan exists, are in the README's [Contracts](../README.md#contracts) section. A dead-lettered `ToolInvocationRequested`, `ToolInvocationResulted` or `StepTimedOut` is not reported by the hook: the step timeout produces that failure. Tool workers do not use the hook.
 
 ---
 
@@ -165,9 +155,9 @@ Terminal plans stay in LevelDB as tombstones; the orchestrator never deletes pla
 
 **Step timeouts** (`stepTimers.ts`, `STEP_TIMEOUT_MS`, default 30 000). A timer only publishes `StepTimedOut{stepIndex, deadline}`; it never reads or mutates plan state. After each `savePlan` of a `running` plan the orchestrator schedules (replacing any earlier timer) at `stepDeadline`; after a terminal save it cancels. A failed timer publish is logged and re-armed after 5 s. Because the timeout is an ordinary event in the conversation's partition, whichever of the result and the timeout comes first in the log wins, and duplicates are harmless. On startup, after the store opens and before the consumer subscribes, the orchestrator scans `running` plans (`listRunningPlans()`), arms each at its stored deadline (overdue ones fire immediately, a plan without a deadline gets `now + stepTimeoutMs`) and logs `rescheduled N step timer(s)`. The result of an overdue plan that is already in the log has a lower offset than a timeout published on restart, so the real result still wins. Timers live in this one process: nothing times out while it is down.
 
-**Idempotency:** a `ToolInvocationResulted` is applied only when the plan is `running`, `payload.stepIndex` is an integer equal to the step the plan is awaiting, and `toolName` equals that step's tool. Everything else is ignored, with no write and no emit, and logged as `ignored reason=...`: `unknown-plan`, `plan-terminal`, `missing-step-index`, `duplicate-step`, `future-step` (logged as an error) or `tool-mismatch`. A `PlanGenerated` for a conversation that already has a plan is ignored as `duplicate-plan`. There is no fallback for results without `stepIndex`.
+**Idempotency:** a `ToolInvocationResulted` is applied only when the plan is `running`, `payload.stepIndex` is an integer equal to the step the plan is awaiting, and `toolName` equals that step's tool. Everything else is ignored, with no write and no emit, and logged as `ignored reason=...`: `unknown-plan`, `plan-terminal`, `missing-step-index`, `duplicate-step`, `future-step` (logged as an error) or `tool-mismatch`. A `PlanGenerated` for a conversation that already has a plan is ignored as `duplicate-plan`.
 
-**Delivery order:** emit, then persist (`sync: true`), then offset commit. A crash between any two of these replays the message against the unchanged or already-updated state, and the replay is either recomputed identically or ignored. Store read and write errors become `StoreError` (a missing plan is `null`, not an error) and are rethrown, so kafkajs redelivers instead of the handler continuing on stale state. Outbound events are at-least-once; workers do not deduplicate, so a duplicate `ToolInvocationRequested` re-runs the tool and the orchestrator absorbs the extra result through `stepIndex`. The correctness argument depends on one partition per conversation being handled serially by a single orchestrator (the invariant comment above `handle()`).
+**Delivery order:** emit, then persist (`sync: true`), then offset commit. Store read and write errors become `StoreError` (a missing plan is `null`, not an error) and are rethrown, so kafkajs redelivers. Why this order is safe, what breaks it, and the crash-window tests: README [Delivery guarantees](../README.md#delivery-guarantees).
 
 Logs `[Benchmark] workerLatency=Xms`.
 
@@ -237,7 +227,7 @@ On `SynthesizeFinalAnswerRequested`, every outcome follows **publish → persist
 4. For an answer, `appendToHistory(sessionId, conversationId, …)`, idempotent by `conversationId`.
 5. One LevelDB batch: `put done:<cid>`, `del q:<cid>`, `del o:<cid>`.
 
-`done:<cid>` is never written unless the publish succeeded, because writing it first and crashing would lose the user's notification. A crash after `o:` republishes from the memo with no second LLM call; a crash after the publish republishes (a duplicate frame, harmless because the web server forgets the conversation on the first) and then completes with one history entry. A failure while writing history is retryable and reuses `o:`, so a disk outage never triggers more LLM calls. Failed outcomes commit the offset normally and write no DLQ record.
+`done:<cid>` is never written unless the publish succeeded. The crash windows around this order and their tests are in the README's [Delivery guarantees](../README.md#delivery-guarantees). Failed outcomes commit the offset normally and write no DLQ record.
 
 **History** (`shared/state/historyStore.ts`): writes go to `history.json.<pid>.<rand>.tmp`, are fsynced, then renamed over `history.json`; reads are validated against a schema (legacy entries without `conversationId` are accepted). If the file does not parse or validate, the writer renames it to `history.json.corrupt-<ts>`, logs ERROR and starts fresh; readers (the router, the synthesizer's prompt) log ERROR and use no history. Appends are serialized by an in-process promise-chain mutex. **Only the synthesizer writes**; there is no cross-process lock. The path can be set with `HISTORY_PATH`.
 
@@ -301,23 +291,13 @@ The Aggregator is stateless — by the time `PlanCompleted` arrives, the full re
 
 ---
 
-## Benchmark
+## Latency measurement
 
-Latency is measured via `timestamp` fields in event payloads. Services compute deltas and emit `[Benchmark]` log lines.
+Latency is measured with the `timestamp` fields in event payloads. Services compute deltas and emit `[Benchmark]` log lines; keep them when you change the pipeline.
 
 ```bash
 grep "\[Benchmark\]" scripts/logs/services/*.log
 ```
-
-Single local run of 27 queries (2026-04-05, `LLM_PROVIDER=openai`, earlier 3-product KB). Averages:
-
-| Segment | Avg Latency | Source |
-|---|---|---|
-| Router (`routerLatency`) | ~1,113 ms | `router.log` |
-| Workers (`workerLatency`) | ~39 ms | `orchestrator.log` |
-| Synthesizer (`synthesizerLatency`) | ~2,189 ms | `answer.log` |
-
-**End-to-end: ~3.3 s** — dominated by the two LLM calls (router + synthesizer). The Kafka pipeline overhead (orchestration + all tool workers + Kafka round-trips) is **under 50 ms total**. Full report: [`docs/benchmark.md`](benchmark.md)
 
 ---
 
@@ -344,9 +324,31 @@ Topics are created by `infra/create-topics.sh` (4 topics × 3 partitions); `bun 
 
 - **`start.ts`** refuses to start if any pid file in `$RUN_DIR` (the supervisor's or a service's) points to a live process whose command line contains this repo's path, and tells you to run `bun run stop`. Checking the service pids too matters: a supervisor killed with `-9` leaves its children running, and a second set would fight them for ports and consumer groups. Then it waits for Kafka, creates the topics, pulls the Ollama model only for `LLM_PROVIDER` `auto` or `ollama` and only when `/api/tags` does not list it (`stream:false`, `res.ok` checked; a failed pull exits 1 in `ollama` mode and warns about the OpenAI fallback in `auto` mode), and spawns `supervisor.ts` detached.
 - **`supervisor.ts`** spawns each service directly (`bun <abs path>`, `venv/bin/python -u <abs path>`; one process per service, and the absolute path is what `stop.ts` verifies). It writes `$RUN_DIR/supervisor.pid` and `$RUN_DIR/<service>.pid` (`web`, `router`, `orchestrator`, `aggregator`, `synthesizer`, `math`, `weather`, `exchange`, `chat`, `rag`), appends service output to `$LOG_DIR/<service log>`, and restarts a crashed service according to `scripts/lib/supervisorPolicy.ts`: backoff 1 s doubling to 30 s, reset after 60 s of uptime, `GAVE UP <service>` in `$LOG_DIR/supervisor.log` after 5 crashes within 2 min, and no restart once a stop was requested. On SIGTERM it forwards SIGTERM to the children, waits up to 5 s, sends SIGKILL to the rest, removes the pid files and exits.
-- **`stop.ts`** sends SIGTERM to the supervisor (SIGKILL if it has not exited after 10 s), then, as a fallback for children left behind, signals each remaining pid file's process. A pid is signalled only if `ps -o command= -p <pid>` contains the repo's absolute path (`isOwnedPid`), which guards against pid reuse. It uses no `pkill` and never deletes `.plan-store/LOCK`.
+- **`stop.ts`** sends SIGTERM to the supervisor (SIGKILL if it has not exited after 10 s), then, as a fallback for children left behind, signals each remaining pid file's process. A pid is signalled only if `ps -o command= -p <pid>` contains the repo's absolute path (`isOwnedPid`), which guards against pid reuse. It never deletes `.plan-store/LOCK`.
 - `RUN_DIR` (default `<repo>/.run`) and `LOG_DIR` (default `<repo>/scripts/logs/services`) are read by all three.
 
 ### Frontend failure handling
 
 `src/frontend/src/components/chat/inFlight.ts` is a pure reducer (no React or DOM imports). A tab has at most one in-flight request. The bot bubble is created when the user sends; the `ack` binds it to its `conversationId`, and after that only frames with that id resolve it (frames for any other id are ignored). An `error` that arrives before any ack resolves the unbound request, which is how the `unavailable` frame reaches the user. The request fails after 90 s without a frame (the deadline is reset by `ack` and `tool`; `ChatBot.tsx` arms a timer and feeds a `tick` back to the reducer) with "No response after 90 s. The request may still finish; try again.", and a WebSocket close fails it with "Connection lost while waiting for the answer." Both leave the error bubble with its Try again button, and a later answer for the failed request is ignored. 90 s exceeds the longest silent server stage (synthesizer 60 s, step 30 s, router 15 s).
+
+---
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `shared/` | Code every service imports: `kafka/` (client, config, failure ownership), `schemas/` (zod contracts + generated JSON Schema), `llm/` (`callLLM`, providers, errors), `prompts/`, `state/` (plan, synth and history stores), `topics.ts`, `testing/` (fault points) |
+| `src/node/core/` | `webServer`, `routerService`, client frames |
+| `src/node/orchestration/` | `orchestrator`, `aggregator`, `answerSynthesizer` |
+| `src/node/apps/` | Tool workers: math, weather, exchange, general chat |
+| `src/python/rag/` | RAG worker, index builder, price rule, source matching, Kafka config, unit tests |
+| `src/frontend/` | React 19 + Vite UI; `dist/` is built (`bun run build:web`), not committed |
+| `scripts/` | `start`, `stop`, `supervisor`, schema generator, helpers in `lib/` |
+| `infra/` | Compose files (dev stack and integration-test broker), topic creation script |
+| `test/integration/` | Integration suite: real broker, real service processes, fake LLM |
+| `data/products/` | Knowledge base text files indexed by `index_kb.py` |
+| `.github/` | CI workflow and its composite actions |
+
+## Configuration
+
+Every environment variable the services read, with its default, is documented in [`.env.example`](../.env.example). Defaults are the dev-stack values, so a plain `bun run start` needs no `.env` beyond an LLM choice.

@@ -2,7 +2,7 @@
 
 Fourteen failure scenarios with the behavior the code has today and how to reproduce each one.
 
-All commands assume the repository root as the working directory, Kafka running via `infra/docker-compose.yml`, and the services started with `bun run start`. Logs are written to `scripts/logs/services/` (append mode; restarts are recorded in `supervisor.log`), and each process's pid is in `.run/<service>.pid`: `web`, `router`, `orchestrator`, `aggregator`, `synthesizer`, `math`, `weather`, `exchange`, `chat`, `rag`. Signal the pid from those files, not a `pkill` pattern.
+All commands assume the repository root as the working directory, Kafka running via `infra/docker-compose.yml`, and the services started with `bun run start`. Logs are written to `scripts/logs/services/` (append mode; restarts are recorded in `supervisor.log`), and each process's pid is in `.run/<service>.pid`: `web`, `router`, `orchestrator`, `aggregator`, `synthesizer`, `math`, `weather`, `exchange`, `chat`, `rag`. Signal the pid from those files.
 
 Kafka CLI tools are not on the container's PATH; call them as `/opt/kafka/bin/<tool>.sh`.
 
@@ -158,7 +158,7 @@ docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh \
 
 The UI receives exactly one answer, and `aggregator.log` shows no second `PlanCompleted`.
 
-To see the live-plan case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. The orchestrator logs `ignored reason=duplicate-step` and the plan finishes normally. No automated integration test covers this yet; phase 5 adds them.
+To see the live-plan case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. The orchestrator logs `ignored reason=duplicate-step` and the plan finishes normally. Integration test D1 (`test/integration/idempotency.test.ts`) covers this.
 
 
 **Evidence:** `test/integration/idempotency.test.ts` › D1 (a duplicate result while the plan is live does not re-dispatch the next step), D2 (a duplicate result after completion changes nothing downstream) and D3 (a duplicate `PlanGenerated`, while running and after the answer, dispatches nothing twice). `test/integration/happy.test.ts` › H2 (a two-step plan runs in order).
