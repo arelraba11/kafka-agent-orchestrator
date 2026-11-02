@@ -1,8 +1,8 @@
 # Resilience Demo — Kafka AI Agent
 
-Ten failure scenarios with the behavior the code has today and how to reproduce each one.
+Fourteen failure scenarios with the behavior the code has today and how to reproduce each one.
 
-All commands assume the repository root as the working directory, Kafka running via `infra/docker-compose.yml`, and the services started with `bun run start`. Logs are written to `scripts/logs/services/`.
+All commands assume the repository root as the working directory, Kafka running via `infra/docker-compose.yml`, and the services started with `bun run start`. Logs are written to `scripts/logs/services/` (append mode; restarts are recorded in `supervisor.log`), and each process's pid is in `.run/<service>.pid`: `web`, `router`, `orchestrator`, `aggregator`, `synthesizer`, `math`, `weather`, `exchange`, `chat`, `rag`. Signal the pid from those files, not a `pkill` pattern.
 
 Kafka CLI tools are not on the container's PATH; call them as `/opt/kafka/bin/<tool>.sh`.
 
@@ -12,7 +12,7 @@ Kafka CLI tools are not on the container's PATH; call them as `/opt/kafka/bin/<t
 
 **What breaks:** A tool worker process is killed while a plan is in flight.
 
-**Why it recovers:** Kafka keeps the messages after the worker's last committed offset. When the worker restarts it rejoins its consumer group and reads the `ToolInvocationRequested` events it had not yet processed.
+**Why it recovers:** The supervisor restarts the worker (about 1 s later, see Scenario 11). Kafka keeps the messages after the worker's last committed offset, so the restarted worker rejoins its consumer group and reads the `ToolInvocationRequested` events it had not yet processed.
 
 ### Steps
 
@@ -32,30 +32,27 @@ weather in tel aviv
 #      orchestrator.log  [Benchmark] conversationId=<id> workerLatency=Xms
 
 # 3. Kill the weather worker
-pkill -f "weatherApp.ts"
+kill -9 $(cat .run/weather.pid)
 
-# 4. Send another query while the worker is down. Type in the UI:
+# 4. Send another query right away. Type in the UI:
 weather in haifa
-#    The orchestrator dispatches ToolInvocationRequested to Kafka, but no worker
-#    consumes it. The plan stays pending. After STEP_TIMEOUT_MS (30 s by default)
-#    the plan fails; see Scenario 6.
-
-# 5. Restart the weather worker within 30 s of the query
-bun run weather >> scripts/logs/services/weather.log 2>&1 &
-#    The worker reads the pending message from its last committed offset and
-#    emits ToolInvocationResulted. The orchestrator completes the plan and the
-#    UI receives the answer.
+#    supervisor.log:  weather exited (exit code 137); restarting in 1000ms
+#                     started weather pid=<new pid>
+#    The orchestrator dispatches ToolInvocationRequested to Kafka. If the worker is
+#    not back yet, the message waits in the topic; the restarted worker reads it from
+#    its last committed offset and emits ToolInvocationResulted. The orchestrator
+#    completes the plan and the UI receives the answer.
 ```
 
 ### Expected outcome
 
-If the worker is back within the step timeout, the UI receives the weather answer for the second query, with no manual Kafka intervention. If it comes back later, the UI has already shown "The weather tool didn't respond within 30 s.", and the late result is logged `ignored reason=plan-terminal`.
+The UI receives the weather answer for the second query, with no manual Kafka intervention and no manual restart. If the worker could not come back within the step timeout, the UI would have shown "The weather tool didn't respond within 30 s.", and the late result would be logged `ignored reason=plan-terminal` (to hold a worker down on purpose, pause it with `kill -STOP`: Scenario 6).
 
 ---
 
 ## Scenario 2 — Orchestrator Crash
 
-**What breaks:** The orchestrator process is killed and restarted.
+**What breaks:** The orchestrator process is killed and restarted (by the supervisor).
 
 **Why it recovers:** Two mechanisms work together. Kafka redelivers events whose offsets the orchestrator had not committed. Plan state lives in LevelDB (`shared/state/planStore.ts`, `.plan-store/`), so when the next `ToolInvocationResulted` for a stored plan arrives, the restarted orchestrator finds the state and continues from the saved `stepIndex`.
 
@@ -73,11 +70,10 @@ weather in jerusalem
 #    Confirm the answer arrives.
 
 # 3. Kill the orchestrator
-pkill -f "orchestrator.ts"
+kill -9 $(cat .run/orchestrator.pid)
 
-# 4. Restart the orchestrator
-bun run orchestrator >> scripts/logs/services/orchestrator.log 2>&1 &
-#    Expected startup lines:
+# 4. The supervisor restarts it after about 1 s (supervisor.log: "orchestrator exited ... restarting in 1000ms")
+#    Expected startup lines in orchestrator.log:
 #      [orchestrator] PlanStore initialized
 #      [orchestrator] rescheduled 0 step timer(s) stepTimeoutMs=30000
 #      [orchestrator] OrchestratorService started.
@@ -290,10 +286,10 @@ No socket is pending for an injected conversation, so the web server sends **no*
 # 1. Stop the repo's services, set a short timeout in .env, and start again
 bun run stop
 echo "STEP_TIMEOUT_MS=10000" >> .env
-bun run start &     # wait until orchestrator.log shows "OrchestratorService started."
+bun run start      # then wait until orchestrator.log shows "OrchestratorService started."
 
-# 2. Pause the math worker (signal the `bun src/...` process, not the `bun run` wrapper)
-MATH=$(pgrep -f "bun src/node/apps/mathApp.ts")
+# 2. Pause the math worker
+MATH=$(cat .run/math.pid)
 kill -STOP $MATH
 
 # 3. Ask in the UI (or over the WebSocket):
@@ -311,8 +307,7 @@ kill -CONT $MATH
 ```bash
 # Pause math again and ask again. As soon as orchestrator.log shows dispatching tool="math":
 kill -STOP $MATH
-kill -9 $(pgrep -f "bun src/node/orchestration/orchestrator.ts")
-nohup bun src/node/orchestration/orchestrator.ts >> scripts/logs/services/orchestrator.log 2>&1 &
+kill -9 $(cat .run/orchestrator.pid)     # the supervisor restarts it after about 1 s
 ```
 
 The restarted orchestrator logs `rescheduled 1 step timer(s)` and publishes `StepTimedOut` at the original deadline (an overdue deadline fires immediately). The `PlanFailed` follows as soon as its consumer is assigned its partitions again: a `kill -9`'d consumer holds its group membership until the broker's session timeout (about 30 s with kafkajs defaults), so the UI may see the failure after that, not exactly at the deadline. If the worker's result is already in the log it has a lower offset than the new `StepTimedOut`, so the real result wins.
@@ -440,6 +435,103 @@ jq . history.json                        # valid again, holding the new exchange
 
 ---
 
+## Scenario 11 — Service Crash, Restart and Give-up
+
+**What breaks:** Any service process dies (`kill -9`, an uncaught exception, the RAG worker exiting on a failed send).
+
+**What the code does:** `scripts/supervisor.ts` owns every service process and restarts it according to `scripts/lib/supervisorPolicy.ts`: backoff 1 s, doubling to a 30 s cap, reset after 60 s of uptime. After 5 crashes within 2 min it writes `GAVE UP <service>` to `supervisor.log` and stops restarting that service. `bun run stop` is a requested stop and never triggers a restart.
+
+### Steps
+
+```bash
+kill -9 $(cat .run/weather.pid)
+sleep 2
+cat .run/weather.pid                      # a new pid
+tail -3 scripts/logs/services/supervisor.log
+#    <ts> [supervisor] weather exited (exit code 137); restarting in 1000ms
+#    <ts> [supervisor] started weather pid=<new pid>
+#    Ask "weather in tel aviv" in the UI: it is answered.
+
+# Repeat the kill quickly: the delay doubles (2000ms, 4000ms, 8000ms); the 5th crash within 2 min logs
+#    <ts> [supervisor] GAVE UP weather (exit code 137; crashed too often, not restarting)
+
+# Running start twice is refused, and the instance is untouched
+bun run start                             # ERROR: already running (supervisor pid <n>, .../.run). Run 'bun run stop' first.
+
+# A second copy elsewhere (separate pid files and logs; it still shares Kafka and the stores, so stop the first one first)
+bun run stop
+RUN_DIR=$TMPDIR/run LOG_DIR=$TMPDIR/logs bun run start
+RUN_DIR=$TMPDIR/run bun run stop
+```
+
+### Expected outcome
+
+A crashed service is back in about a second and the next request is answered. If the supervisor gave up on a service, requests that need it fail with the step timeout (tools) or the client timeout (Scenario 12). `bun run stop` leaves unrelated processes alone (try `bun run idle` from a directory whose `package.json` has `"idle": "sleep 600"`: it survives) and does not delete `.plan-store/LOCK`.
+
+---
+
+## Scenario 12 — Nothing Answers (Client Idle Timeout)
+
+**What breaks:** The pipeline goes silent past every server-side bound, for example because the orchestrator is down or stopped.
+
+**What the code does:** The UI fails the in-flight request when it has received no frame for it for 90 s (the timer is reset by `ack` and `tool`).
+
+### Steps
+
+```bash
+kill -STOP $(cat .run/orchestrator.pid)
+#    Ask any question in the UI. After 90 s: "No response after 90 s. The request may still finish; try again." and a Try again button.
+kill -CONT $(cat .run/orchestrator.pid)
+#    The late answer is ignored by the UI (the request was already failed).
+```
+
+### Expected outcome
+
+The error bubble appears 90 s after the last frame (the ack), with a Try again button. Nothing happens in the UI when the orchestrator resumes and the answer arrives. The orchestrator's step timers cannot fire while it is paused; this timeout is what covers that gap.
+
+---
+
+## Scenario 13 — WebSocket Disconnect While Waiting
+
+**What breaks:** The web server dies (or the connection drops) with a request in flight.
+
+**What the code does:** When the socket closes the UI fails the in-flight request, then reconnects after 3 s. The supervisor restarts the web server.
+
+### Steps
+
+```bash
+#    Ask a question that takes a few seconds (e.g. "what is the weather in london"), then immediately:
+kill -9 $(cat .run/web.pid)
+```
+
+### Expected outcome
+
+The pending bubble turns into "Connection lost while waiting for the answer." with a Try again button, the header shows the disconnected state, and the UI reconnects once the supervisor has restarted the web server (about 1 s plus the server's startup time, about 15 s). Try again then sends the question again.
+
+---
+
+## Scenario 14 — Query Cannot Be Published
+
+**What breaks:** Kafka is unreachable when the user sends a question.
+
+**What the code does:** The web server's `publish` fails, so it forgets the request and sends `error{code:"unavailable"}` instead of an ack.
+
+### Steps
+
+```bash
+docker pause kafka
+#    Ask a question in the UI.
+docker unpause kafka
+```
+
+### Expected outcome
+
+With a paused broker, each kafkajs produce attempt times out after about 30 s (`webserver.log` shows `Request Produce … timed out`, retryCount 0, 1, 2, …), so the send outlasts the client's 90 s idle timeout and the user sees "No response after 90 s…" first. The `unavailable` frame ("The service is unavailable right now. Try again.", with a Try again button) is what the user sees once the send actually fails (`webserver.log`: `publish failed: …`).
+
+A Kafka failure at `bun run start` is loud too: with the `kafka` container missing or renamed, `bun run start` exits 1 with the topic script's error and starts nothing (`.run/` stays empty).
+
+---
+
 ## Summary
 
 | Test | Mechanism | Recovery |
@@ -454,3 +546,7 @@ jq . history.json                        # valid again, holding the new exchange
 | Duplicate `PlanCompleted` | Synthesizer `done:` marker, set only after the publish | One answer, one history entry |
 | Poison message that belongs to a conversation | DLQ record, then `ConversationFailed{internal-error}` from the owning service | The user is told; the dead letter needs manual inspection |
 | Corrupt `history.json` | Atomic writes; the writer quarantines the file | Answers continue; old context kept on disk |
+| Service crash | Supervisor restarts with backoff, gives up after 5 crashes in 2 min | Automatic; `GAVE UP` in `supervisor.log` if it cannot |
+| Nothing answers | UI idle timeout, 90 s without a frame | The user sees an error bubble with a Try again button |
+| WebSocket disconnect | UI fails the in-flight request and reconnects | The user sees "Connection lost…" with a Try again button |
+| Query cannot be published | `error{code:"unavailable"}` frame | The user sees "The service is unavailable right now" with a Try again button (after the send fails; with a paused broker the 90 s timeout usually comes first) |

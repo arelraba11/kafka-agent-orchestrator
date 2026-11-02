@@ -151,7 +151,7 @@ The knowledge base in `data/products/` is sample data: 11 products (56 chunks), 
 ### Run
 
 ```bash
-bun run start    # start 10 background processes incl. webServer (logs → scripts/logs/services/)
+bun run start    # start a supervisor that runs the 10 service processes incl. webServer (logs → scripts/logs/services/, pids → .run/)
 
 # Open the Web UI at http://localhost:3001
 # The WebSocket endpoint is ws://localhost:3001/ws: send the query as a plain-text frame.
@@ -160,8 +160,10 @@ bun run start    # start 10 background processes incl. webServer (logs → scrip
 # Or for hot-reload dev mode:
 bun run web:dev    # http://localhost:5173 (proxies /ws → port 3001)
 
-bun run stop     # stop everything
+bun run stop     # stop the supervisor and its services (only the pids recorded in .run/)
 ```
+
+`bun run start` checks Kafka, creates the topics (it exits 1 with the script's output if that fails), pulls the Ollama model only when `LLM_PROVIDER` is `auto` or `ollama` and the model is missing, and then starts `scripts/supervisor.ts` detached. It refuses to run while any pid in `.run/` is still alive ("already running; run `bun run stop` first"), including children left behind by a supervisor that was killed. The supervisor runs each service as one direct process, writes `.run/<service>.pid`, and restarts a crashed service with backoff (1 s, doubling to a 30 s cap, reset after 60 s of uptime); `scripts/logs/services/supervisor.log` records starts, restarts and `GAVE UP <service>` (5 crashes within 2 min). Service logs are opened in append mode, so they keep growing across restarts. `bun run stop` sends SIGTERM to the supervisor, which stops its children (SIGKILL after 5 s); it signals only pids whose command line contains this repo's path, and it neither uses `pkill` nor touches `.plan-store/LOCK`. `RUN_DIR` and `LOG_DIR` move the pid files and logs (see `.env.example`).
 
 `bun run start` serves the committed build in `src/frontend/dist/`. After changing frontend code, run `bun run build` in `src/frontend` so `dist/` is current.
 
@@ -232,6 +234,10 @@ The synthesizer is idempotent too. For every outcome it publishes first and pers
 | Slow, failing or unconfigured LLM | Per-attempt timeouts inside a per-call budget, bounded retries for transient errors only, in one layer (`callLLM`). The router falls back to regex. The synthesizer publishes `ConversationFailed` (`llm-unavailable`, `llm-misconfigured` or `empty-answer`) | The user sees an error message; no partition is blocked |
 | A tool step nobody answers (worker down or paused, request or result dead-lettered) | `StepTimedOut` after `STEP_TIMEOUT_MS` (default 30 s) → `PlanFailed{code:"step-timeout"}`. The deadline is persisted and re-armed when the orchestrator restarts | The user sees "The `<tool>` tool didn't respond within 30 s" |
 | Poison message in a conversation (e.g. a contract-violating `UserQueryReceived`, `PlanGenerated` or `PlanCompleted`) | After the DLQ record, the service that owns that message type publishes `ConversationFailed{code:"internal-error"}` (router: routing, orchestrator: orchestration when no plan exists, aggregator: aggregation, synthesizer: synthesis); the web server sends a direct error frame for a poison final event | The user sees "Something went wrong … (ref `<id8>`)"; the DLQ record needs manual inspection |
+| A service process crashes | The supervisor restarts it with backoff; Kafka redelivers whatever it had not committed. After 5 crashes within 2 min it logs `GAVE UP <service>` and stops restarting that service | Automatic; if it gave up, the step timeout or the client timeout below tells the user |
+| The web server cannot publish the user's query (Kafka down) | It sends an `error` frame with `code:"unavailable"` and forgets the request | The user sees "The service is unavailable right now. Try again." with a Try again button. A paused broker is slower: each kafkajs produce attempt times out after about 30 s, so the 90 s client timeout (next row) usually fires first |
+| Nothing answers for 90 s (e.g. the orchestrator is down) | The UI fails the in-flight request after 90 s without a frame (reset by `ack` and `tool`) | The user sees "No response after 90 s. The request may still finish; try again." with a Try again button; a late answer is ignored |
+| WebSocket disconnect while a request is in flight | The UI marks the in-flight request failed when the socket closes, then reconnects after 3 s | The user sees "Connection lost while waiting for the answer." with a Try again button |
 | Duplicate `PlanCompleted` or synthesize command | The synthesizer's `done:<cid>` marker (see Idempotency) | One answer, one history entry, one LLM call |
 | `history.json` corrupt or half-written | Writes are atomic (temp file + rename). A file that does not validate is quarantined to `history.json.corrupt-<ts>` by the writer; readers log ERROR and use no history | Answers keep arriving; the earlier context is kept on disk |
 
@@ -243,18 +249,14 @@ Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
 
 | Limitation | Fixed in |
 |---|---|
-| planned: phase 4 Part B. Crashed services are not restarted (`scripts/start.ts` spawns each process once). The RAG worker exits on a failed result send, so its plans stall (until the step timeout fails them) until it is started again | Phase 4 (Part B) |
+| The supervisor is dev-grade: one machine, no health checks, no restart after it gives up on a service, and if the supervisor itself is killed (`kill -9`) its children keep running until `bun run stop` finds them through their pid files. docker-compose or k8s restart policies are the at-scale answer | Known design limit |
 | Plan tombstones (`completed` and `failed`) are kept in `.plan-store/` forever, and `.synth-store/` keeps a small `done:<cid>` marker per conversation forever; there is no pruning | Known design limit |
-| Step timers live in the orchestrator process, so no timeout fires while it is down (they are re-armed from the persisted deadline on restart, and overdue ones fire immediately). Nothing else bounds a request, because the client has no timeout yet | Known design limit |
+| Step timers live in the orchestrator process, so no timeout fires while it is down (they are re-armed from the persisted deadline on restart, and overdue ones fire immediately). The client's idle timeout covers that case, and it is fixed at 90 s (not configurable) | Known design limit |
 | Only the synthesizer writes `history.json` (atomic file replace, in-process mutex, no cross-process lock). A second writer process would lose updates | Known design limit |
-| planned: phase 4 Part B. If publishing the user's query to Kafka fails, the web server logs it and drops the frame: the UI gets no ack and no error | Phase 4 (Part B) |
-| planned: phase 4 Part B. The UI has no idle timeout and resolves a reply against the first pending bubble: a request that never finishes spins forever, and a WebSocket disconnect leaves it spinning after the UI reconnects | Phase 4 (Part B) |
-| planned: phase 4 Part B. `bun run start` pulls the Ollama model on every start, whatever `LLM_PROVIDER` is, and ignores the result of the pull and of topic creation | Phase 4 (Part B) |
 | A poison message is dead-lettered once per consumer group that handles its type, so one bad message can produce several records (`consumer.group` tells them apart). There is no DLQ replay tool | Known design limit |
-| The unknown-error retry budget (3 attempts) is held in memory and resets when the process restarts. The Python RAG worker has no bounded retry: a failure other than poison crashes it uncommitted, and it is redelivered when it is started again | Known design limit |
+| The unknown-error retry budget (3 attempts) is held in memory and resets when the process restarts. The Python RAG worker has no bounded retry: a failure other than poison crashes it uncommitted, and it is redelivered when the supervisor restarts it | Known design limit |
 | A RAG result with no `value` (no price line found, even after the full-source fallback) makes `{{step_N.result}}` fall back to `context`, and `exchange` parses the first number in that text, which can be the wrong one (for example a model name). The fallback also takes the first price line in the top-ranked source, so an add-on line (MacBook AppleCare `$299`, Tesla FSD `$8,000`) wins if its chunk ranks above the headline chunk | Known design limit |
 | `PlanState` in LevelDB is not schema-validated (`history.json` is), and the Python worker hardcodes the topic names | Known design limit |
-| planned: phase 4 Part B. `bun run stop` runs `pkill -f "bun run"` (`scripts/stop.ts`), which also kills unrelated `bun run` processes on the machine | Phase 4 (Part B) |
 | Each service handles one message at a time (`consumer.run` sets no `partitionsConsumedConcurrently`, one instance per group), so 3 partitions give no parallelism today | Known design limit |
 | Orchestrator dispatches one step at a time; independent steps are not parallelised | Known design limit |
 | Weather and exchange-rate data are stubbed (11 cities, static rates) | Known design limit |
@@ -322,11 +324,13 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │   └── create-topics.sh               # create 4 topics × 3 partitions
 ├── scripts/
 │   ├── gen-schemas.ts                 # zod → shared/schemas/*.json (bun run schemas:gen / schemas:check)
-│   ├── start.ts                       # launch 10 background processes
-│   ├── stop.ts
-│   └── logs/services/                 # per-service log files
+│   ├── start.ts                       # checks, topics, conditional model pull, then the detached supervisor
+│   ├── supervisor.ts                  # runs the 10 services, restarts crashes with backoff, writes .run/*.pid
+│   ├── stop.ts                        # pid-based stop (only verified pids from .run/)
+│   ├── lib/                           # supervisorPolicy.ts, pidFiles.ts, startChecks.ts (+ tests)
+│   └── logs/services/                 # per-service log files (append mode) + supervisor.log
 ├── src/
-│   ├── frontend/                      # React 19 + Vite web UI
+│   ├── frontend/                      # React 19 + Vite web UI (chat/inFlight.ts: in-flight tracking and idle timeout)
 │   ├── node/
 │   │   ├── core/                      # routerService.ts, webServer.ts (+ clientFrames.ts)
 │   │   ├── orchestration/             # orchestrator.ts (+ planTransition.ts, stepTimers.ts), aggregator.ts, answerSynthesizer.ts (+ synthesize.ts)
@@ -340,6 +344,7 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 │   ├── prompts/                       # LLM prompt functions
 │   ├── state/                         # planStore.ts (LevelDB plans), synthStore.ts (LevelDB synthesizer dedupe + questions), historyStore.ts (history.json)
 │   └── topics.ts                      # topic name constants
+├── .run/                              # supervisor and service pid files (runtime, gitignored)
 ├── history.json                       # per-session chat history (runtime file, gitignored)
 └── data/products/                     # 11 .txt files, one per product (RAG knowledge base, sample data)
 ```
