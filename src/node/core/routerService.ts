@@ -12,6 +12,7 @@ import { callLLM } from "../../../shared/llm/callLLM";
 import { routerPlanPrompt } from "../../../shared/prompts/routerPlanPrompt";
 import { getHistory } from "../../../shared/state/historyStore";
 import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
+import { FAILURE_OWNERSHIP } from "../../../shared/kafka/failureOwnership";
 
 // ─── Regex fallback planner ───────────────────────────────────────────────────
 
@@ -117,7 +118,7 @@ await subscribeAndRun({
   types: ["UserQueryReceived"],
   // A poison UserQueryReceived (or an outbound-violating PlanGenerated built from one)
   // is dead-lettered; tell the user their request could not be planned.
-  onDeadLettered: conversationFailedHook(producer, { owns: "UserQueryReceived", stage: "routing" }),
+  onDeadLettered: conversationFailedHook(producer, FAILURE_OWNERSHIP.router),
   handler: async (event) => {
     const { conversationId, payload } = event;
     const sessionId = payload.sessionId;

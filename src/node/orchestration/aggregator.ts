@@ -7,6 +7,7 @@ import {
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
 import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
+import { FAILURE_OWNERSHIP } from "../../../shared/kafka/failureOwnership";
 import type { PlanCompleted } from "../../../shared/schemas/PlanCompleted";
 import type { SynthesizeFinalAnswerRequested } from "../../../shared/schemas/SynthesizeFinalAnswerRequested";
 
@@ -52,7 +53,7 @@ await subscribeAndRun({
   producer,
   topic: TOPICS.CONVERSATION_EVENTS,
   types: ["PlanCompleted"],
-  onDeadLettered: conversationFailedHook(producer, { owns: "PlanCompleted", stage: "aggregation" }),
+  onDeadLettered: conversationFailedHook(producer, FAILURE_OWNERSHIP.aggregator),
   handler: (event) => onPlanCompleted(producer, event),
 });
 

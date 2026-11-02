@@ -8,6 +8,7 @@ import {
 import { TOPICS } from "../../../shared/topics";
 import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceived";
 import type { ConversationFailed } from "../../../shared/schemas/ConversationFailed";
+import { WEB_OWNED_TYPES } from "../../../shared/kafka/failureOwnership";
 import { stepTimeoutMs } from "../../../shared/stepTimeout";
 import { toClientFrame } from "./clientFrames";
 import { join } from "path";
@@ -41,7 +42,7 @@ await subscribeAndRun({
   // A poison final answer or failure event can never reach the user as itself: if the
   // conversation is still pending, send a direct error frame (no new event).
   onDeadLettered: {
-    owns: ["FinalAnswerSynthesized", "PlanFailed", "ConversationFailed"],
+    owns: WEB_OWNED_TYPES,
     handle: async (record) => {
       const conversationId = record.conversationId!;
       const ws = pending.get(conversationId);

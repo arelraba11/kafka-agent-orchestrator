@@ -13,6 +13,7 @@ import { transition, type OrchestratorInput } from "./planTransition";
 import { createStepTimers, rescheduleRunning, type StepTimers } from "./stepTimers";
 
 import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
+import { FAILURE_OWNERSHIP } from "../../../shared/kafka/failureOwnership";
 import { stepTimeoutMs } from "../../../shared/stepTimeout";
 
 const STEP_TIMEOUT_MS = stepTimeoutMs();
@@ -129,8 +130,7 @@ await subscribeAndRun({
   // dead-lettered result or timeout belongs to a plan that exists; its step timeout
   // (or normal completion) produces the user's outcome.
   onDeadLettered: conversationFailedHook(producer, {
-    owns: "PlanGenerated",
-    stage: "orchestration",
+    ...FAILURE_OWNERSHIP.orchestrator,
     when: async (record) => (await getPlan(record.conversationId!)) === null,
   }),
   handler: (event) => handle(producer, timers, event),
