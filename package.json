@@ -11,6 +11,7 @@
     "exchange": "bun src/node/apps/exchangeApp.ts",
     "chat": "bun src/node/apps/generalChatApp.ts",
     "web": "bun src/node/core/webServer.ts",
+    "build:web": "cd src/frontend && bun install --frozen-lockfile && bun run build",
     "web:dev": "cd src/frontend && bun run dev",
     "test": "bun test ./shared ./src ./scripts",
     "typecheck": "tsc --noEmit -p tsconfig.json",

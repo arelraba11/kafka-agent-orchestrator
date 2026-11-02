@@ -222,7 +222,8 @@ export async function createServices(
         const m = await groupMembers(name);
         if (m === null || [...m].some((id) => stale.has(id))) return null;
         if (name === "web") {
-          const ok = await fetch(`http://127.0.0.1:${webPort}/`).then((r) => r.ok, () => false);
+          // Any HTTP answer means the server is listening (without a UI build it answers 503).
+          const ok = await fetch(`http://127.0.0.1:${webPort}/`).then(() => true, () => false);
           if (!ok) return null;
         }
         return m;

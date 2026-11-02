@@ -18,6 +18,7 @@ import { join } from "path";
 const PORT = webPort();
 const CONSUMER_GROUP = "ui-web-final-answer";
 const DIST_DIR = join(import.meta.dir, "../../../src/frontend/dist");
+const UI_NOT_BUILT = 'UI not built: run "bun run build:web"';
 const FRAME_CONFIG = { stepTimeoutMs: stepTimeoutMs() };
 
 // Map<conversationId, {ws, at}> — tracks in-flight requests. `at` feeds the TTL sweeper.
@@ -39,6 +40,10 @@ const sessions = new Map<any, string>();
 const producer = await createProducer();
 const consumer = await createConsumer(CONSUMER_GROUP);
 registerShutdown([producer, consumer]);
+
+if (!(await Bun.file(join(DIST_DIR, "index.html")).exists())) {
+  console.error(`[webserver] ERROR ${UI_NOT_BUILT}`);
+}
 
 // Start consumer BEFORE Bun.serve — eliminates race window where a fast pipeline
 // could emit FinalAnswerSynthesized before the pending map entry exists.
@@ -101,6 +106,11 @@ Bun.serve({
     if (pathname === "/ws") {
       server.upgrade(req);
       return undefined;
+    }
+
+    // /ws keeps working without a UI build; everything else needs dist/index.html.
+    if (!(await Bun.file(join(DIST_DIR, "index.html")).exists())) {
+      return new Response(UI_NOT_BUILT, { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
 
     // Serve built React app assets
