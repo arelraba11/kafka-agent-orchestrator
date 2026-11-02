@@ -35,6 +35,22 @@ class ParseSpec(unittest.TestCase):
         self.assertIsNone(f.parse_spec(""))
 
 
+class ParseNth(unittest.TestCase):
+    def test_no_selector(self):
+        self.assertEqual(f.parse_nth("rag:before-send"), ("rag:before-send", None))
+        self.assertEqual(f.parse_nth("rag:before-send@x"), ("rag:before-send@x", None))
+        self.assertEqual(f.parse_nth(None), (None, None))
+
+    def test_nth_call_selector(self):
+        self.assertEqual(f.parse_nth("rag:before-send#2"), ("rag:before-send", 2))
+        self.assertEqual(f.parse_nth("rag:before-send@x#3"), ("rag:before-send@x", 3))
+
+    def test_garbage_is_rejected(self):
+        for bad in ("rag:before-send#0", "rag:before-send#x", "rag:before-send#"):
+            with self.assertRaises(ValueError):
+                f.parse_nth(bad)
+
+
 class NoOpWithoutDir(unittest.TestCase):
     def test_no_files_and_no_crash(self):
         with tempfile.TemporaryDirectory() as d:
@@ -73,6 +89,47 @@ class Crash(unittest.TestCase):
             r = self.run_child(d, "rag:before-send")
             self.assertEqual(r.returncode, 0)
             self.assertIn("survived", r.stdout)
+
+
+class NthCall(unittest.TestCase):
+    def test_crash_only_on_the_nth_call(self):
+        code = (
+            f"import sys; sys.path.insert(0, {str(HERE)!r}); import fault_point; "
+            "[fault_point.fault_point('rag:after-send') or print('call', i, flush=True) for i in (1, 2, 3)]"
+        )
+        with tempfile.TemporaryDirectory() as d:
+            env = {"PATH": os.environ.get("PATH", ""), "FAULT_DIR": d, "FAULT_CRASH": "rag:after-send#2"}
+            r = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+            self.assertEqual(r.returncode, -9)
+            self.assertIn("call 1", r.stdout)
+            self.assertNotIn("call 2", r.stdout)
+            self.assertEqual(len(hits(d, "rag:after-send")), 2)
+
+    def test_hold_skips_the_first_call_and_holds_the_second(self):
+        with tempfile.TemporaryDirectory() as d:
+            fp = f.FaultPoints({"FAULT_DIR": d, "FAULT_HOLD": "rag:before-send#2"})
+            reached = Path(d) / "rag:before-send.reached"
+            fp.hit("rag:before-send")  # call 1 passes straight through
+            self.assertFalse(reached.exists())
+
+            done = threading.Event()
+
+            def run():
+                fp.hit("rag:before-send")  # call 2 holds
+                done.set()
+
+            t = threading.Thread(target=run)
+            t.start()
+            deadline = time.time() + 2
+            while not reached.exists() and time.time() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(reached.exists())
+            self.assertFalse(done.is_set())
+            (Path(d) / "rag:before-send.release").write_text("")
+            t.join(2)
+            self.assertTrue(done.is_set())
+            fp.hit("rag:before-send")  # call 3 passes straight through
+            self.assertEqual(len(hits(d, "rag:before-send")), 3)
 
 
 class Hold(unittest.TestCase):
