@@ -8,9 +8,7 @@ pnpm-lock.yaml
 yarn.lock
 
 # ─── TypeScript build output ──────────────────────────────────────────────────
-# Commit the built frontend so reviewers don't need to run a build step
 dist/
-!src/frontend/dist/
 *.tsbuildinfo
 
 # ─── Logs ─────────────────────────────────────────────────────────────────────

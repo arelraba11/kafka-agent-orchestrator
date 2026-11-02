@@ -10,6 +10,7 @@ import { mkdirSync, openSync, closeSync } from "fs";
 import { DEFAULT_OLLAMA_MODEL } from "../shared/llm/providers";
 import { findLiveOwnedPids, isOwnedPid, readPidFile, resolveDirs } from "./lib/pidFiles";
 import { hasModel, shouldPullModel } from "./lib/startChecks";
+import { distIndexMtime, needsWebBuild, webSourceMtimes } from "./lib/webBuild";
 
 const ROOT = join(import.meta.dir, "..");
 const { runDir: RUN_DIR, logDir: LOG_DIR } = resolveDirs(ROOT, process.env);
@@ -112,6 +113,29 @@ async function ensureOllamaModel(provider: string): Promise<void> {
   }
 }
 
+// ─── Web UI build ─────────────────────────────────────────────────────────────
+
+async function ensureWebBuild(): Promise<void> {
+  const frontendDir = join(ROOT, "src/frontend");
+  if (!needsWebBuild(distIndexMtime(frontendDir), webSourceMtimes(frontendDir))) {
+    console.log("Web UI build is up to date.");
+    return;
+  }
+  console.log("Building the web UI (missing or stale)...");
+  const proc = Bun.spawn(["bun", "run", "build:web"], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (proc.exitCode !== 0) {
+    console.error(`ERROR: web UI build failed (exit ${proc.exitCode}).`);
+    console.error(`${stdout}${stderr}`.trim());
+    process.exit(1);
+  }
+  console.log("Web UI built.");
+}
+
 // ─── Supervisor ───────────────────────────────────────────────────────────────
 
 async function startSupervisor(): Promise<void> {
@@ -141,6 +165,7 @@ async function startSupervisor(): Promise<void> {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+await ensureWebBuild();
 await waitForKafka();
 await ensureTopics();
 await ensureOllamaModel(process.env.LLM_PROVIDER?.trim() || "auto");
