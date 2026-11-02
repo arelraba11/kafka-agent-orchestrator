@@ -1,0 +1,38 @@
+# Dedicated broker for the integration suite (bun run test:int). Never touches the dev
+# stack: different compose project, no container_name, port 19092 (TEST_KAFKA_PORT
+# overrides it). Data lives in the container filesystem, so `down -v` gives every run a
+# fresh broker. The suite brings it up and down itself (test/integration/setup.ts).
+name: kafka-agent-orchestrator-test
+
+services:
+  kafka:
+    image: apache/kafka:3.8.0
+    ports:
+      - "${TEST_KAFKA_PORT:-19092}:${TEST_KAFKA_PORT:-19092}"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+
+      KAFKA_LISTENERS: PLAINTEXT://:${TEST_KAFKA_PORT:-19092},CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:${TEST_KAFKA_PORT:-19092}
+
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # Test-only: instant group joins, short sessions allowed, and a wrong topic name fails loudly.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_GROUP_MIN_SESSION_TIMEOUT_MS: 1000
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:${TEST_KAFKA_PORT:-19092} > /dev/null 2>&1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 2s

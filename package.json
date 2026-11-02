@@ -12,11 +12,12 @@
     "chat": "bun src/node/apps/generalChatApp.ts",
     "web": "bun src/node/core/webServer.ts",
     "web:dev": "cd src/frontend && bun run dev",
-    "test": "bun test",
+    "test": "bun test ./shared ./src ./scripts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "schemas:gen": "bun scripts/gen-schemas.ts",
     "schemas:check": "bun scripts/gen-schemas.ts --check",
-    "test:py": "src/python/venv/bin/python -I -m unittest discover -s src/python/rag -p 'test_*.py'"
+    "test:py": "src/python/venv/bin/python -I -m unittest discover -s src/python/rag -p 'test_*.py'",
+    "test:int": "bun --no-env-file test ./test/integration --preload ./test/integration/setup.ts --timeout 30000"
   },
   "dependencies": {
     "kafkajs": "^2.2.4",

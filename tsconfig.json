@@ -16,6 +16,7 @@
     "shared/**/*",
     "src/node/**/*",
     "scripts/**/*",
+    "test/**/*",
     "src/frontend/src/**/*.test.ts"
   ]
 }

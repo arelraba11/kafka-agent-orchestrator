@@ -17,6 +17,9 @@ dist/
 *.log
 scripts/logs/
 
+# ─── Integration test logs ───────────────────────────────────────────────────
+test/integration/.logs/
+
 # ─── Runtime data ─────────────────────────────────────────────────────────────
 history.json
 history.json.corrupt-*
