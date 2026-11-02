@@ -19,6 +19,8 @@ scripts/logs/
 
 # ─── Runtime data ─────────────────────────────────────────────────────────────
 history.json
+history.json.corrupt-*
+history.json.*.tmp
 .plan-store/
 
 # ─── Python ───────────────────────────────────────────────────────────────────

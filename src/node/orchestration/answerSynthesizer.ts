@@ -67,7 +67,7 @@ await subscribeAndRun({
     await publish(producer, TOPICS.CONVERSATION_EVENTS, finalEvent);
 
     if (sessionId) {
-      await appendToHistory(sessionId, userQuery, answer);
+      await appendToHistory(sessionId, conversationId, userQuery, answer);
     }
 
     const synthesizerLatency = Date.now() - planCompletedAt;
