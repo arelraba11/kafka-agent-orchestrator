@@ -76,6 +76,14 @@ class Knobs(unittest.TestCase):
             {"retries": 1, "request_timeout_ms": 2000},
         )
 
+    def test_max_block_ms_maps_to_kafka_python_and_defaults_to_the_library(self):
+        # unset: not passed, so the library's 60000 applies (a cold producer blocks that long on a down broker)
+        self.assertNotIn("max_block_ms", k.producer_kwargs({}))
+        self.assertEqual(k.producer_kwargs({"KAFKA_MAX_BLOCK_MS": "3000"}), {"max_block_ms": 3000})
+        with self.assertRaises(ValueError) as cm:
+            k.producer_kwargs({"KAFKA_MAX_BLOCK_MS": "0"})
+        self.assertIn("KAFKA_MAX_BLOCK_MS", str(cm.exception))
+
     def test_send_timeout_default_is_10_seconds(self):
         self.assertEqual(k.send_timeout_s({}), 10)
         self.assertEqual(k.send_timeout_s({"RAG_SEND_TIMEOUT_S": "3"}), 3)

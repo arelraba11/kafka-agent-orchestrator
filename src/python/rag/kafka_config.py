@@ -9,7 +9,8 @@ hardcoded behavior. Only the integration suite sets these variables.
                               the Kafka edge; DLQ records and logs keep logical names
   KAFKA_OFFSET_RESET          earliest | latest (default latest)
   KAFKA_SESSION_TIMEOUT_MS / KAFKA_HEARTBEAT_INTERVAL_MS / KAFKA_REBALANCE_TIMEOUT_MS
-  KAFKA_RETRIES / KAFKA_REQUEST_TIMEOUT_MS   producer
+  KAFKA_RETRIES / KAFKA_REQUEST_TIMEOUT_MS / KAFKA_MAX_BLOCK_MS   producer (max block: how long send()
+                              waits for topic metadata; the library default is 60000)
   RAG_SEND_TIMEOUT_S          confirmed-send timeout (default 10)
 """
 
@@ -83,7 +84,11 @@ def consumer_kwargs(env: Env = os.environ) -> dict:
 def producer_kwargs(env: Env = os.environ) -> dict:
     """kafka-python KafkaProducer options; empty by default (library defaults)."""
     out = {}
-    for var, key in (("KAFKA_RETRIES", "retries"), ("KAFKA_REQUEST_TIMEOUT_MS", "request_timeout_ms")):
+    for var, key in (
+        ("KAFKA_RETRIES", "retries"),
+        ("KAFKA_REQUEST_TIMEOUT_MS", "request_timeout_ms"),
+        ("KAFKA_MAX_BLOCK_MS", "max_block_ms"),
+    ):
         n = _int(env, var)
         if n is not None:
             out[key] = n
