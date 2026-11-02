@@ -1,379 +1,286 @@
-# Event-Sourced AI Agent with Kafka
+# Kafka Agent Orchestrator
 
-An event-driven, multi-step AI agent built on Apache Kafka 3.8.0. Services publish events and commands to Kafka topics and never call each other directly; the only service holding state is the orchestrator (LevelDB). The LLM is called via `callLLM` (Ollama or OpenAI, see `LLM_PROVIDER`).
+[![CI](https://github.com/arelraba11/kafka-agent-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arelraba11/kafka-agent-orchestrator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
----
+A multi-step LLM agent in which 10 services coordinate only through Kafka. The router plans tool calls, an orchestrator runs them one step at a time, a Python RAG worker answers product questions, and a synthesizer writes the answer.
+Stack: Bun + TypeScript, kafkajs, zod, LevelDB, Python 3.12 + ChromaDB, React 19 + Vite.
 
-## System Flow
+- Plan state transitions are effectively-once under at-least-once delivery.
+- zod contracts are enforced in both TypeScript and Python.
+- Poison messages cannot block a partition.
+- Every failure reaches the user, as an error event or, for a message with no conversation (for example malformed JSON), as the client's 90 s idle timeout.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            SYSTEM FLOW                                      │
-│                                                                             │
-│   USER                                                                      │
-│    │  types question                                                        │
-│    ▼                                                                        │
-│  webServer.ts                                                               │
-│    │  produces:  UserQueryReceived { payload: { userInput, sessionId } }    │
-│    │  topic:     user-commands                                              │
-│    ▼                                                                        │
-│  routerService.ts                                                           │
-│    │  reads:     UserQueryReceived from user-commands                       │
-│    │  action:    callLLM → tool plan (regex planner as fallback)            │
-│    │  produces:  PlanGenerated { sessionId, payload: { steps[] } }          │
-│    │  topic:     conversation-events                                        │
-│    ▼                                                                        │
-│  orchestrator.ts  ◄──── LevelDB (.plan-store/)                              │
-│    │  reads:     PlanGenerated from conversation-events                     │
-│    │  action:    saves plan to LevelDB, dispatches step 1                   │
-│    │  produces:  ToolInvocationRequested { conversationId, toolName,        │
-│    │             stepIndex, input }                                         │
-│    │  topic:     tool-invocation-requests                                   │
-│    ▼                                                                        │
-│  [Tool Workers — each is an independent consumer group]                     │
-│    ├── mathApp.ts          → handles toolName="math"                        │
-│    ├── weatherApp.ts       → handles toolName="weather"                     │
-│    ├── exchangeApp.ts      → handles toolName="exchange"                    │
-│    ├── generalChatApp.ts   → handles toolName="chat"                        │
-│    └── rag_retriever.py    → handles toolName="getProductInformation"       │
-│    │                                                                        │
-│    │  each worker produces: ToolInvocationResulted { toolName, stepIndex,   │
-│    │                        result }                                        │
-│    │  topic:                conversation-events                             │
-│    ▼                                                                        │
-│  orchestrator.ts  (continues)                                               │
-│    │  reads:     ToolInvocationResulted from conversation-events            │
-│    │  action:    updates LevelDB state, resolves {{step_N.result}}          │
-│    │             if more steps → dispatch next ToolInvocationRequested      │
-│    │             if all steps done:                                         │
-│    │  produces:  PlanCompleted { sessionId, payload: { results[] } }        │
-│    │  topic:     conversation-events                                        │
-│    │             on a tool error, or a step unanswered for 30 s:            │
-│    │  produces:  PlanFailed { code } (no dead letter)                       │
-│    ▼                                                                        │
-│  aggregator.ts                                                              │
-│    │  reads:     PlanCompleted from conversation-events                     │
-│    │  produces:  SynthesizeFinalAnswerRequested { payload: { results[] } }  │
-│    │  topic:     user-commands                                              │
-│    ▼                                                                        │
-│  answerSynthesizer.ts                                                       │
-│    │  reads:     SynthesizeFinalAnswerRequested from user-commands          │
-│    │  action:    callLLM → synthesizes final answer                         │
-│    │  produces:  FinalAnswerSynthesized { answer }                          │
-│    │             or, if the LLM fails: ConversationFailed { stage, code }   │
-│    │  topic:     conversation-events                                        │
-│    ▼                                                                        │
-│  webServer.ts  (consumer loop)                                              │
-│    │  reads:     ToolInvocationResulted, FinalAnswerSynthesized,            │
-│    │             PlanFailed, ConversationFailed                             │
-│    │  action:    pushes {tool} / {answer} / {error} over the WebSocket      │
-│    ▼                                                                        │
-│   USER                                                                      │
-│    receives answer                                                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+**41 integration scenarios run against a real Kafka broker, and the crash scenarios kill real service processes at named crash points. They check that no step is lost, no result is applied twice and no history entry is duplicated. CI runs them in about 5 minutes (warm caches) with no API key.**
 
-**Key rule:** every message is keyed by `conversationId` — guarantees ordering per conversation. Topics have 3 partitions, but each service runs a single instance that handles one message at a time (see Known limitations).
+## Demo
 
----
+<!-- demo GIF: docs/demo.gif, recorded manually -->
 
-## Kafka Topics
+Three flows, with the events each one produces. Step-by-step reproductions are in [`docs/resilience-demo.md`](docs/resilience-demo.md).
 
-| Topic | Type | Events |
-|---|---|---|
-| `user-commands` | Commands | `UserQueryReceived`, `SynthesizeFinalAnswerRequested` |
-| `conversation-events` | Events | `PlanGenerated`, `ToolInvocationResulted`, `PlanCompleted`, `PlanFailed` (with `code`), `FinalAnswerSynthesized`, `ConversationFailed`, `StepTimedOut` |
-| `tool-invocation-requests` | Commands | `ToolInvocationRequested` |
-| `dead-letter-queue` | Poison messages | `MessageDeadLettered`: a message that can never be processed (malformed, contract-violating, key mismatch, or crashing a handler). Failed plans are `PlanFailed` events, not dead letters. A dead-lettered conversation is also reported to the user as a `ConversationFailed` (see Resilience) |
+**(a) Two steps with data flow.** `how much is an iPhone in ILS?`
 
-4 topics × 3 partitions each.
+`UserQueryReceived` → `PlanGenerated [getProductInformation, exchange]` → the RAG worker returns `{context, value:"1199"}` → `exchange` receives `currencyCode:"USD"`, `targetCurrency:"ILS"`, `amount:"{{step_0.result}}"` resolved to `1199` → `PlanCompleted` → `FinalAnswerSynthesized`, for example "The price of an iPhone is 1199 USD, which is approximately 4436.3 ILS." (the wording varies between runs).
 
----
+`value` is the knowledge-base price in USD ([`src/python/rag/price.py`](src/python/rag/price.py)). `{{step_N.result}}` resolves to `value`, then `context`, then JSON, so `exchange` converts 1199 and not the first number in the context text (`16`, from "iPhone 16 Pro Max"). This phrasing is one of the router's few-shot examples ([`shared/prompts/routerPlanPrompt.ts`](shared/prompts/routerPlanPrompt.ts)); the regex fallback never plans this chain. With `LLM_PROVIDER=openai` the router planned it in 5 of 5 consecutive runs. Evidence: R0 in `test/integration/rag.test.ts`.
 
-## Services
+**(b) Tool error.** `PlanGenerated [math "2/0"]` → `ToolInvocationResulted{error:"Division by zero"}` → `PlanFailed{code:"tool-error", failedTool:"math"}`. Nothing is dead-lettered; a failed plan is an event. The scenario is shown with an injected plan, because the LLM router answers a typed "what is 2/0" as `chat`. Commands: Scenario 5 in [`docs/resilience-demo.md`](docs/resilience-demo.md). Evidence: the "failed step" cases in `src/node/orchestration/planTransition.test.ts`.
 
-| Service | File | Consumer Group | Produces to |
-|---|---|---|---|
-| WebServer | `src/node/core/webServer.ts` | `ui-web-final-answer` | `user-commands` |
-| RouterService | `src/node/core/routerService.ts` | `router-plan-service` | `conversation-events` |
-| Orchestrator | `src/node/orchestration/orchestrator.ts` | `orchestrator-service` | `tool-invocation-requests`, `conversation-events` |
-| Aggregator | `src/node/orchestration/aggregator.ts` | `aggregator-service` | `user-commands` |
-| AnswerSynthesizer | `src/node/orchestration/answerSynthesizer.ts` | `answer-synthesizer` | `conversation-events` |
-| mathApp | `src/node/apps/mathApp.ts` | `math-tool-worker` | `conversation-events` |
-| weatherApp | `src/node/apps/weatherApp.ts` | `weather-tool-worker` | `conversation-events` |
-| exchangeApp | `src/node/apps/exchangeApp.ts` | `exchange-tool-worker` | `conversation-events` |
-| generalChatApp | `src/node/apps/generalChatApp.ts` | `chat-tool-worker` | `conversation-events` |
-| RAG Retriever | `src/python/rag/rag_retriever.py` | `rag-tool-worker` | `conversation-events` |
+**(c) Step timeout.** A worker is down → no result → `StepTimedOut` after `STEP_TIMEOUT_MS` (30 s) → `PlanFailed{code:"step-timeout"}` → the UI shows "The math tool didn't respond within 30 s." A result that arrives later is ignored. Evidence: T1 and T2 in `test/integration/timeouts.test.ts`.
 
----
+## Quick start
 
-## Setup & Run
+Prerequisites: Docker with Compose v2, Bun 1.3.3 (`.bun-version`), Python 3.12, and an LLM.
 
-### Prerequisites
-- Docker + docker-compose
-- Bun 1.0+
-- Python 3.12 (for the RAG worker)
-- `OPENAI_API_KEY` in `.env` only if the LLM provider chain reaches OpenAI (`LLM_PROVIDER=openai`, or `auto` when Ollama fails; see below)
-
-### LLM provider
-
-`callLLM` (`shared/llm/callLLM.ts`, with `providers.ts` and `errors.ts`) picks the provider from `LLM_PROVIDER` in `.env`. The default is `auto`. An unknown value is a configuration error, not `auto`.
-
-| `LLM_PROVIDER` | Behavior |
-|---|---|
-| `auto` (default) | One Ollama attempt (`OLLAMA_HOST`, `OLLAMA_MODEL`, default `llama3.2:1b`), then OpenAI `gpt-4o-mini` with the budget that is left |
-| `ollama` | Ollama only |
-| `openai` | OpenAI `gpt-4o-mini` only |
-
-Every call has an overall budget and a per-attempt timeout (`LLM_ATTEMPT_TIMEOUT_MS`, default 20 s; an attempt never outlives what is left of the budget). The router gets 15 s and one attempt, and falls back to its regex planner. The synthesizer gets 60 s and up to 3 attempts. Transient errors (timeout, network, 429 with `Retry-After` honored, 5xx, an empty answer) are retried with backoff inside `callLLM`, which is the only retry layer (the OpenAI client has `maxRetries: 0`). Authentication and configuration errors are never retried. Each attempt logs `[llm] provider=… attempt=n/m outcome=… ms=…`.
-
-The OpenAI client is created on the first call that reaches OpenAI, so `OPENAI_API_KEY` is required only then. Without it, services still start; the call fails with a configuration error (`OPENAI_API_KEY is not set`) and the user sees "The assistant's language model is misconfigured". An *invalid* key is an authentication error: the router falls back to its regex planner, and the synthesizer reports the same "misconfigured" message after one attempt.
-
-### One-time setup
+- **Recommended:** an OpenAI key, with `LLM_PROVIDER=openai`.
+- **Keyless:** Ollama, started by compose, used by `LLM_PROVIDER=ollama` or `auto` (the code default: one Ollama attempt, then OpenAI). The default model `llama3.2:1b` plans multi-step queries poorly, so use OpenAI to see the demo flows.
 
 ```bash
-cp .env.example .env          # set LLM_PROVIDER, and OPENAI_API_KEY if OpenAI is in the chain
-docker-compose -f infra/docker-compose.yml up -d    # Kafka (and Ollama)
-bash infra/create-topics.sh   # create 4 topics × 3 partitions
+cp .env.example .env            # then set LLM_PROVIDER=openai and OPENAI_API_KEY
+docker compose -f infra/docker-compose.yml up -d kafka   # add `ollama` to also start Ollama
 bun install
-cd src/frontend && bun install && cd ../..          # only needed for `bun run web:dev`
 
-# Python RAG (one-time, Python 3.12)
-cd src/python
-python3.12 -m venv venv && source venv/bin/activate
-pip install -r rag/requirements.txt
-python rag/index_kb.py        # index data/products/ into an embedded Chroma store
-cd ../..
+python3.12 -m venv src/python/venv
+src/python/venv/bin/pip install -r src/python/rag/requirements.txt
+src/python/venv/bin/python src/python/rag/index_kb.py    # builds the ChromaDB index (56 chunks)
+
+bun run start     # topics, UI build if needed, then all 10 services under a supervisor
+# open http://localhost:3001, or send a plain-text frame to ws://localhost:3001/ws
+bun run stop      # stops the supervisor and only this repo's pids from .run/
 ```
 
-The knowledge base in `data/products/` is sample data: 11 products (56 chunks), one `.txt` file per product or product family, all prices in USD. The newer files (Galaxy S25 / S25 Ultra, Sony WH-1000XM5, PlayStation 5 Pro, Nintendo Switch 2, Toyota Camry) use launch prices (US MSRP at launch, not today's price). The five older files (iPhone, iPad, MacBook, Tesla, Honda) keep their original headline prices, which are illustrative: for example the MacBook Pro 16-inch line says "Starting at $2,000", which is not Apple's launch price. After editing a file, re-run `index_kb.py`.
+Service logs are in `scripts/logs/services/`. `bun run start` creates the topics, pulls the Ollama model only for `auto`/`ollama`, builds the UI when `src/frontend/dist` is missing or stale, and restarts crashed services with backoff.
 
-### Run
+To run the tests with no LLM and no key: `bun run test` (unit) and `bun run test:int` (see [Testing](#testing)).
 
-```bash
-bun run start    # start a supervisor that runs the 10 service processes incl. webServer (logs → scripts/logs/services/, pids → .run/)
+## Architecture
 
-# Open the Web UI at http://localhost:3001
-# The WebSocket endpoint is ws://localhost:3001/ws: send the query as a plain-text frame.
-# The server replies with JSON frames {type:"ack"}, {type:"tool"}, {type:"answer"} or {type:"error"}. An error frame has `reason` (the text shown to the user), plus `conversationId` and `code`.
+```mermaid
+flowchart LR
+  web[web]
+  router[router]
+  orch[orchestrator]
+  workers["workers x4<br/>math, weather,<br/>exchange, chat"]
+  rag["RAG worker<br/>(Python)"]
+  agg[aggregator]
+  synth[synthesizer]
+  uc[(user-commands)]
+  ce[(conversation-events)]
+  tir[(tool-invocation-requests)]
+  dlq[(dead-letter-queue)]
+  ps[".plan-store<br/>(LevelDB)"]
+  ss[".synth-store<br/>(LevelDB)"]
+  hist["history.json"]
 
-# Or for hot-reload dev mode:
-bun run web:dev    # http://localhost:5173 (proxies /ws → port 3001)
-
-bun run stop     # stop the supervisor and its services (only the pids recorded in .run/)
+  web --> uc
+  uc --> router
+  router --> ce
+  ce --> orch
+  orch --> tir
+  orch --> ce
+  tir --> workers
+  tir --> rag
+  workers --> ce
+  rag --> ce
+  ce --> agg
+  agg --> uc
+  uc --> synth
+  synth --> ce
+  ce --> web
+  orch <--> ps
+  synth <--> ss
+  synth --> hist
+  hist -.read.-> router
+  hist -.read.-> synth
+  uc -.poison.-> dlq
+  ce -.poison.-> dlq
+  tir -.poison.-> dlq
 ```
 
-`bun run start` checks Kafka, creates the topics (it exits 1 with the script's output if that fails), pulls the Ollama model only when `LLM_PROVIDER` is `auto` or `ollama` and the model is missing, and then starts `scripts/supervisor.ts` detached. It refuses to run while any pid in `.run/` is still alive ("already running; run `bun run stop` first"), including children left behind by a supervisor that was killed. The supervisor runs each service as one direct process, writes `.run/<service>.pid`, and restarts a crashed service with backoff (1 s, doubling to a 30 s cap, reset after 60 s of uptime); `scripts/logs/services/supervisor.log` records starts, restarts and `GAVE UP <service>` (5 crashes within 2 min). Service logs are opened in append mode, so they keep growing across restarts. `bun run stop` sends SIGTERM to the supervisor, which stops its children (SIGKILL after 5 s); it signals only pids whose command line contains this repo's path, and it neither uses `pkill` nor touches `.plan-store/LOCK`. `RUN_DIR` and `LOG_DIR` move the pid files and logs (see `.env.example`).
+1. `web` receives a WebSocket frame and publishes `UserQueryReceived` to `user-commands`.
+2. `router` asks the LLM for a plan (an ordered list of `{tool, args}`), falls back to a regex planner if the LLM fails, and publishes `PlanGenerated`.
+3. `orchestrator` stores the plan in LevelDB and dispatches one step at a time as `ToolInvocationRequested`. Later steps can use earlier results through `{{step_N.result}}`.
+4. A worker picks up its tool's requests and publishes `ToolInvocationResulted`. A step that nobody answers times out as `StepTimedOut`.
+5. When the last step is done the orchestrator emits `PlanCompleted`; a failed step or a timeout emits `PlanFailed`.
+6. `aggregator` turns `PlanCompleted` into `SynthesizeFinalAnswerRequested`.
+7. `synthesizer` calls the LLM and publishes `FinalAnswerSynthesized`, or `ConversationFailed` if it cannot. `web` forwards the final events to the socket.
 
-`bun run start` serves the committed build in `src/frontend/dist/`. After changing frontend code, run `bun run build` in `src/frontend` so `dist/` is current.
+Every message is keyed by `conversationId`, so each conversation lives on one partition per topic. The dead-letter queue takes poison messages from any consumer on any of the three topics (the dashed edges). Event shapes, per-service details and configuration: [`docs/architecture.md`](docs/architecture.md).
 
----
+**RAG worker.** The sample knowledge base is 11 products in `data/products/` (56 chunks). For each request the worker:
 
-## Architecture Concepts
+1. retrieves the top-K chunks by embedding similarity;
+2. picks the top source by product name (`prefer_product_match` → `select_top_source` in [`source_match.py`](src/python/rag/source_match.py)). A source matches when every token of its file stem (`galaxy_s25_ultra` → galaxy, s25, ultra) appears as a whole word in the query. The most specific match wins, ties go by embedding rank, and with no match the embedding order stands. `Galaxy S25 price` therefore reads `galaxy_s25`, not the closer-scoring `galaxy_s25_ultra`;
+3. applies the price rule ([`price.py`](src/python/rag/price.py)) to that source and returns the price as `result.value` and the retrieved text as `result.context`.
 
-### Events in Kafka
-Kafka carries every command and event, keyed by `conversationId`, so you can inspect a conversation's history on the topics. This is not full event sourcing:
-- **No replay** — consumers subscribe with `fromBeginning: false`, and nothing rebuilds state by replaying events. Plan state lives only in LevelDB (`.plan-store/`).
-- **Retention** — compose sets no retention, so Kafka's default of 7 days applies; events are not permanent.
-- **Recovery** — nothing resumes a plan by replay. After a crash, a service's consumer group re-reads the events it had not committed, and the orchestrator picks up LevelDB state when the next `ToolInvocationResulted` for that conversation arrives. The one startup scan re-arms step timers for plans that were `running` (see Resilience).
-- **Auditability** — each event carries `conversationId` and `timestamp`, so a conversation can be traced by key while the topic retains it.
+Evidence: `test_source_match.py`, `test_price.py` (every KB product), R0.
 
-### Stateful Stream Processing — Orchestrator
-The only stateful service. Uses **LevelDB** (`.plan-store/`) keyed by `conversationId`:
+**Currency rule.** Every KB price is USD. The router prompt converts a KB price only with `currencyCode: "USD"` ([`routerPlanPrompt.ts`](shared/prompts/routerPlanPrompt.ts)), and the synthesis prompt treats a product-tool price as USD even when it is a bare number ([`synthesisPrompt.ts`](shared/prompts/synthesisPrompt.ts)). A new KB file with a non-USD price would break both, so new files must quote USD.
 
-```
-PlanGenerated  → save plan (stepIndex=0, results=[]) → dispatch step[0]
-ToolInvocationResulted → load state → append result → resolve {{step_N.result}}
-  → if more steps: dispatch next step
-  → if done: emit PlanCompleted, keep the plan as a `completed` tombstone
-  → if error: emit PlanFailed{code:"tool-error"}, keep a `failed` tombstone (no dead letter: a failed plan is a domain event)
-StepTimedOut → if it matches the awaited step and its deadline: emit PlanFailed{code:"step-timeout"}
-```
+## Delivery guarantees
 
-Every request and result carries `stepIndex`. The orchestrator applies a result only when it matches the step the plan is awaiting; anything else is ignored with a logged reason. The handler emits the outbound events first, then persists the new state (`sync: true`), and Kafka commits the offset after the handler returns. A crash anywhere in that sequence replays the message, and the replay is either recomputed identically or ignored. Terminal plans are never deleted, so a late or replayed message for a finished plan is recognised and ignored.
+Delivery is at-least-once and handlers are idempotent, which makes plan transitions effectively-once. Outbound events can be duplicated, and consumers absorb the duplicates: the orchestrator by `stepIndex`, the synthesizer by its `done:` marker, the history file by `conversationId`.
 
-**Step timeouts.** Each dispatched step gets a persisted deadline (`PlanState.stepDeadline`, `STEP_TIMEOUT_MS`, default 30 s). A timer in the orchestrator only publishes a `StepTimedOut` event; it never touches state. The event then goes through the same serialized path as results and the pure `transition()` decides, so whichever of the result and the timeout comes first in the partition wins, deterministically. A stale or duplicate timeout is ignored (`stale-timeout`, `plan-terminal`). On startup the orchestrator re-arms a timer for every `running` plan at its stored deadline (`rescheduled N step timer(s)`); an overdue one fires immediately.
+The orchestrator emits, then persists, then lets kafkajs commit the offset. That order is safe because of this invariant, quoted from [`orchestrator.ts`](src/node/orchestration/orchestrator.ts):
 
-LevelDB survives restarts. Kafka redelivers events whose offsets were not committed.
+> INVARIANT: emit-before-persist is correct only because every event for a conversation is keyed by conversationId (→ one partition of conversation-events) and kafkajs handles a partition serially (partitionsConsumedConcurrently = 1). A redelivered message is therefore always re-handled before any later event for the same conversation, against the same persisted state. Do not raise concurrency per partition, or key these events by anything else, without revisiting this.
 
-### CQRS
+It also relies on a single orchestrator, since the LevelDB store is locked by one process. Sharing state across orchestrators breaks it too.
 
-```
-COMMANDS (write-side)                 EVENTS (read-side facts)
-─────────────────────                 ────────────────────────
-user-commands                         conversation-events
-  UserQueryReceived                     PlanGenerated
-  SynthesizeFinalAnswerRequested        ToolInvocationResulted
-tool-invocation-requests                PlanCompleted / PlanFailed
-  ToolInvocationRequested               FinalAnswerSynthesized
-                                        ConversationFailed / StepTimedOut
+The "Before" column describes the original design of each window; "After" is what the code does now.
 
-Aggregator = CQRS bridge: PlanCompleted (event) → SynthesizeFinalAnswerRequested (command)
-```
+| Window | Before | After | Evidence |
+|---|---|---|---|
+| Orchestrator: state written, next step not emitted | A redelivered result is re-applied, a step is skipped, the answer is wrong | Cannot occur: emit precedes persist | `orchestrator.ts` ordering, crash-replay cases in `planTransition.test.ts` |
+| Orchestrator: emitted, not persisted (start / advance / complete) | A `PlanGenerated` replay resets the plan; a second `PlanCompleted` | The same transition is recomputed and re-emitted; the duplicate result is ignored | C-b1, C-b2, C-b3 |
+| Orchestrator: persisted, offset not committed | Results re-applied, full re-run | Every replay is ignored (`duplicate-step`, `plan-terminal`, `duplicate-plan`) | C-c1, C-c2, C-c3 |
+| Duplicate result while the plan is live | `stepIndex` advanced twice | Ignored | D1 |
+| Duplicate result after completion; duplicate `PlanGenerated` | Re-applied; plan reset | Ignored | D2, D3 |
+| Duplicate `PlanCompleted` | Two LLM calls, two history entries | One LLM call, one entry | D4 |
+| Synthesizer crash after the LLM call, before the memo | Question lost on restart | LLM asked again once; the question was persisted | S1 |
+| … after the memo, before the publish | | Published from the memo, no LLM call | S2 |
+| … after the publish, before `done` | Duplicate answer and history entry | Republished; history still has one entry | S3 |
+| … after history, before `done` | | History append is idempotent | S4 |
+| Broker down while emitting | Error swallowed or plan failed | Retried and redelivered, never dead-lettered | X1 |
+| Orchestrator killed with a step pending | The plan waits forever | Timer re-armed at the original deadline (fires once the restarted orchestrator owns the partition again) | T3 |
+| RAG producer cannot reach the broker (cold producer) | Silent; offset auto-committed, result lost | Exits uncommitted, redelivered after restart | R1a |
+| RAG send never acknowledged (warm producer) | Silent; offset auto-committed, result lost | No commit without the ack, redelivered. Catches a bare `send()` without `.get()`, which R1a cannot | R1b |
+| RAG crash after the send, before the commit | Duplicate result re-applied | Duplicate ignored | R2 |
+| Store I/O error | Read as "unknown", write swallowed | Retryable, redelivered | `shared/kafka/consume.test.ts` (unit) |
+| Machine crash right after a state write | Unsynced write lost | Writes use `sync: true` | Design only, not tested |
 
-Separating commands from events means each service has a single, narrow responsibility: producers never need to know who consumes their output, and consumers never mutate shared state. This makes each microservice independently deployable, testable, and replaceable without breaking the rest of the pipeline.
+C-*, D*, S*, X1, T*, R* are test IDs in `test/integration/`: `crash-orchestrator`, `idempotency`, `crash-synthesizer`, `retryable`, `timeouts` and `rag`. Find one with `grep -F "C-b1:" test/integration/*.test.ts`.
 
-### Idempotency
-At-least-once delivery plus an idempotent orchestrator gives effectively-once plan state transitions. A `ToolInvocationResulted` is applied only if the plan is `running`, `stepIndex` is an integer equal to the step the plan awaits, and `toolName` matches that step. Otherwise it is ignored and logged as `ignored reason=<unknown-plan | plan-terminal | missing-step-index | duplicate-step | future-step | tool-mismatch>` (a `StepTimedOut` can also be `stale-timeout`). A replayed `PlanGenerated` for an existing plan is ignored as `duplicate-plan`.
+## Failure handling
 
-Outbound events (`ToolInvocationRequested`, `PlanCompleted`, `PlanFailed`, dead-letter records) are at-least-once: never lost, sometimes duplicated. Workers do not deduplicate, so a duplicate request re-runs the tool, and the orchestrator absorbs the extra result through `stepIndex`. The guarantee relies on each conversation mapping to one partition handled serially by a single orchestrator (see the invariant comment in `orchestrator.ts`). See Known limitations.
+Failures with no plan state are `ConversationFailed` events (`stage`: routing, orchestration, aggregation, synthesis). Failed plans are `PlanFailed` events (`code`: tool-error, step-timeout, empty-plan). The web server maps both to one error frame (`toClientFrame` in [`clientFrames.ts`](src/node/core/clientFrames.ts)), and the UI shows its `reason`.
 
-The synthesizer is idempotent too. For every outcome it publishes first and persists second: it memoizes the outcome (`o:<cid>` in `.synth-store/`), publishes `FinalAnswerSynthesized` or `ConversationFailed`, appends history (idempotent by `conversationId`), and only then writes `done:<cid>` together with the cleanup in one batch. A duplicate `PlanCompleted` (or a redelivery after `done`) is logged `ignored duplicate` and makes no LLM call, no publish and no history write. A crash between the publish and `done` republishes the same terminal event, which the web server absorbs because it forgets the conversation after the first one.
+| Failure | What happens | What the user sees | Evidence |
+|---|---|---|---|
+| Router LLM fails or returns an invalid plan | Regex planner; `[router] mode=regex-fallback` | A normal answer | L7 |
+| Synthesizer LLM: timeout, network, 429, 5xx | Bounded retries in `callLLM`, then `ConversationFailed{code:"llm-unavailable"}` | "The language model is unavailable right now. Try again." | L1, L2, L5, L6 |
+| Synthesizer LLM: 401/403, bad config | Not retried, `llm-misconfigured` | "The assistant's language model is misconfigured. Check the server logs." | L3 |
+| Synthesizer LLM: blank answer | Retried, then `empty-answer` | "The language model returned an empty answer. Try again." | L4 |
+| Tool returns `{error}` | `PlanFailed{code:"tool-error"}` | "The `<tool>` tool failed: `<its error>`" | `planTransition.test.ts` |
+| Step nobody answers | `StepTimedOut` → `PlanFailed{code:"step-timeout"}` | "The `<tool>` tool didn't respond within 30 s." | T1, T2, T3 |
+| Poison message that belongs to a conversation | DLQ record, then the owning service emits `ConversationFailed{code:"internal-error"}` | "Something went wrong while … (ref `<id8>`)" | P4, PO1 |
+| Broker or store I/O error in a handler | `RetryableError`; redelivered, never dead-lettered | Delay only | X1 |
+| Web server cannot publish the query | `error{code:"unavailable"}` | "The service is unavailable right now. Try again." | `clientFrames.test.ts` |
+| A service process crashes | The supervisor restarts it; Kafka redelivers what was not committed | Nothing, or a step timeout | SV1 |
+| Nothing answers for 90 s | The UI fails the request | "No response after 90 s. The request may still finish; try again." | `inFlight.test.ts` |
+| WebSocket closes while waiting | The UI fails the request | "Connection lost while waiting for the answer." | `inFlight.test.ts` |
+| `history.json` corrupt | The writer quarantines it to `history.json.corrupt-<ts>`; readers log ERROR and use no history | Answers keep arriving | `shared/state/historyStore.test.ts` |
 
----
+`L1`–`L7` are the test IDs in `test/integration/llm-failures.test.ts`. The LLM policy: every attempt has a timeout, transient errors are retried only inside `callLLM`, and the router gets 15 s and 1 attempt while the synthesizer gets 60 s and 3. `LlmError` is non-retryable for Kafka, and every caller catches it.
+
+## Contracts
+
+- Each message type has one zod schema in `shared/schemas/`; there are 11. `bun run schemas:gen` produces JSON Schema (draft 2020-12; readers are tolerant of extra fields). `bun run schemas:check` and `generated.test.ts` fail when the generated files drift.
+- The Python worker validates against the generated JSON Schema with `jsonschema`. Fixtures in `shared/schemas/__fixtures__/` run through both zod (`bun run test`) and `jsonschema` (`bun run test:py`), so both languages accept and reject the same messages.
+- Producers validate before sending (`publish()`); consumers validate in `subscribeAndRun`.
+
+**Dead-letter queue.** It holds poison messages only, as `MessageDeadLettered` records.
+
+- Classes: `malformed-json`, `missing-value`, `contract-violation`, `outbound-contract-violation`, `key-mismatch`, `handler-non-retryable`, `unknown-exhausted`.
+- Each interested consumer group writes its own record, then commits the offset, so the partition keeps flowing. There is no replay tool.
+- One owner tells the user ([`failureOwnership.ts`](shared/kafka/failureOwnership.ts), pinned by `failureOwnership.test.ts`): the router owns `UserQueryReceived`, the orchestrator `PlanGenerated`, the aggregator `PlanCompleted`, the synthesizer `SynthesizeFinalAnswerRequested`. The web server sends a direct error frame for a poison final event.
+- The orchestrator reports a poison `PlanGenerated` only when no plan exists for the conversation: PO1 is reported once as an orchestration failure; PO2 is dead-lettered but not reported.
+
+Evidence: P1–P4, PO1, PO2, P-flow, E1, E2 (`poison`, `idempotency` and `rag` tests), `shared/schemas/schemas.test.ts`, `failureOwnership.test.ts`, `src/python/rag/test_contracts.py`.
+
+## Design decisions
+
+| Decision | Gain | Cost |
+|---|---|---|
+| Kafka is the only channel between services | Full decoupling and an audit trail | Harder debugging; correlate by `conversationId` |
+| Key by `conversationId` | Per-conversation ordering with no locks | No parallelism inside a conversation; a hot conversation pins a partition |
+| Emit → persist → commit, no outbox or transactions | Simple; input redelivery is the recovery loop | Downstream events can be duplicated |
+| Pure `transition(state, event, now, config)` | Crash windows are unit-testable without Kafka | The shell has to keep its ordering |
+| Terminal plans kept as tombstones | Late or replayed events are recognizable | Unbounded growth |
+| zod → generated JSON Schema, tolerant reader | One source of truth for two languages; additive fields are safe | No broker-side compatibility enforcement |
+| Poison-only DLQ; business failures are events | A dead letter means "incident" | Duplicate records per consumer group |
+| Retryable vs non-retryable errors; unknown errors get 3 attempts | Blips are absorbed; deterministic bugs unblock the partition | The attempt count resets on restart |
+| Step timeouts as events on the conversation's partition | Result-vs-timeout race is decided by log order | Timers live in the orchestrator process |
+| LLM retries in one layer, with per-call budgets | Bounded latency | A slow provider fails a request instead of making it wait |
+| Synthesizer: publish → persist with a memoized outcome | No lost notification, at most one extra LLM call | A second LevelDB store |
+| Fault points in service code; compose test broker | Deterministic crash tests on a real broker, locally and in CI | Env-gated no-op calls ship in production code. testcontainers was not used: in a spike, `start()` never resolved under Bun 1.3.3 |
+| LevelDB, not a Kafka Streams state store | Works in Bun | State is not partition-owned (see [At scale](#what-id-do-at-scale)) |
 
 ## Testing
 
-| Command | What it runs | Needs | Time |
-|---|---|---|---|
-| `bun run test` | Unit tests (`shared/`, `src/`, `scripts/`) | Bun | under a second |
-| `bun run test:py` | Python unit tests (contracts, parsing, Kafka settings, fault points) | the RAG venv | under a second |
-| `bun run test:int` | Integration tests in `test/integration/`: real service processes against a real Kafka broker | Docker and Bun; for the files that start the RAG worker (`rag`, `poison`, `supervisor`) also the RAG venv (`src/python/venv`) and the index from `python src/python/rag/index_kb.py` | about 2.5 minutes |
+| Suite | Command | Proves | Needs | Runtime |
+|---|---|---|---|---|
+| Unit | `bun run test` | Transitions, error classification, DLQ records, contracts, LLM policy, synthesizer ordering, history, timers | Bun | 394 tests, under 1 s |
+| Python | `bun run test:py` | Fixture parity with zod, decode/validate/DLQ, price rule, source matching, Kafka config, fault points | The venv | 89 tests, under 1 s |
+| Integration | `bun run test:int` | The guarantees and failure tables above, on a real broker with real processes and a fake LLM | Docker, the venv, `index_kb.py` | 52 tests (41 scenarios + 11 harness self-tests), about 170 s locally; CI about 5 min warm, 6 min cold |
 
-`test:int` needs no API key and never reaches a real LLM: the router and synthesizer talk to a fake OpenAI-compatible server inside the test process. It starts its own broker from `infra/docker-compose.test.yml` (port `19092`, compose project `kafka-agent-orchestrator-test`), so it can run next to the dev stack without touching it: the dev `kafka` container and port `9092`, `.plan-store/`, `.synth-store/`, `history.json` and `.run/` are never used. Every test file gets its own topic and consumer-group namespace and its own temp state directory. The suite removes the broker when it ends; `KEEP_BROKER=1 bun run test:int` keeps it for faster local iteration, and `bun run test:int -t <pattern>` runs a subset (by test name). The files that start the Python RAG worker (`rag`, `poison`, `supervisor`) fail immediately, naming the fix, when the venv or the `chroma_db` index is missing.
+Always `bun run test`, never bare `bun test`, which would also collect `test/integration`. CI runs typecheck, `schemas:check`, the unit and Python suites, the frontend build and the integration suite on every pull request and every push to `main`. It uses no retries, and a nightly job runs the integration suite three times to catch flakes.
 
-Crashes are not timed `kill -9` calls. Service code has named fault points (`orchestrator:after-emit`, `synthesizer:after-publish`, …) that do nothing unless `FAULT_DIR` is set; a test sets them to `SIGKILL` the real process at exactly that point (or to hold it there), then restarts it and checks what Kafka redelivered. Every wait in a test is a condition with a deadline, never a fixed sleep.
+No API key is needed: the router and synthesizer talk to a fake OpenAI-compatible server, services run with `--no-env-file`, and the preload aborts if it sees a real key.
 
----
+**Consumer timing rule.** `KAFKA_MAX_WAIT_MS` (the fetch long-poll) must stay well below `KAFKA_SESSION_TIMEOUT_MS`, because kafkajs sends heartbeats between fetches. A longer wait lets an idle member's session expire, and the rebalance redelivers in-flight messages. The suite uses 500 ms with a 3000 ms session.
 
-## Resilience
+**Test knobs.**
 
-| Scenario | Mechanism | Recovery | Evidence (`test/integration/`) |
-|---|---|---|---|
-| Worker crash | Kafka retains messages at the last committed offset; the worker rejoins its consumer group on restart | Automatic | `rag` › R1a, R1b, R2 (the Python RAG worker) |
-| Orchestrator crash | Kafka redelivers uncommitted events; plan state is read from LevelDB when the next result arrives. On restart the step timers of `running` plans are re-armed from their persisted deadlines | Automatic | `crash-orchestrator` › C-b1–C-b3, C-c1–C-c3 |
-| Duplicate events | The orchestrator applies a result only for the step the plan is awaiting (`stepIndex` + `toolName`). Duplicates, stale, mismatched and post-terminal results, and a replayed `PlanGenerated`, are ignored and logged with a reason. The orchestrator emits before it persists, so a crash replays the message instead of losing a step. | Automatic for plan state (duplicate downstream events remain, see Known limitations) | `idempotency` › D1, D2, D3 |
-| Poison message (malformed JSON, contract violation, key mismatch, a handler bug) | The consumer wrapper writes a `MessageDeadLettered` record to `dead-letter-queue` and the offset is committed, so the partition keeps flowing. An unknown error is retried 3 times first | Manual inspection of the dead letter | `poison` › P1, P2, P3, P-flow; `idempotency` › E1 and `rag` › E2 (unknown extra fields are not poison) |
-| Transient infrastructure failure (LevelDB, producer or history-file I/O) | Handlers throw `StoreError` / `ProducerError`; the message is never dead-lettered and kafkajs redelivers it | Automatic | `retryable` › X1 |
-| Slow, failing or unconfigured LLM | Per-attempt timeouts inside a per-call budget, bounded retries for transient errors only, in one layer (`callLLM`). The router falls back to regex. The synthesizer publishes `ConversationFailed` (`llm-unavailable`, `llm-misconfigured` or `empty-answer`) | The user sees an error message; no partition is blocked | `llm-failures` › L1–L7 |
-| A tool step nobody answers (worker down or paused, request or result dead-lettered) | `StepTimedOut` after `STEP_TIMEOUT_MS` (default 30 s) → `PlanFailed{code:"step-timeout"}`. The deadline is persisted and re-armed when the orchestrator restarts | The user sees "The `<tool>` tool didn't respond within 30 s" | `timeouts` › T1, T2, T3 |
-| Poison message in a conversation (e.g. a contract-violating `UserQueryReceived`, `PlanGenerated` or `PlanCompleted`) | After the DLQ record, the service that owns that message type publishes `ConversationFailed{code:"internal-error"}` (router: routing, orchestrator: orchestration when no plan exists, aggregator: aggregation, synthesizer: synthesis); the web server sends a direct error frame for a poison final event | The user sees "Something went wrong … (ref `<id8>`)"; the DLQ record needs manual inspection | `poison` › P1, P4, PO1, PO2 |
-| A service process crashes | The supervisor restarts it with backoff; Kafka redelivers whatever it had not committed. After 5 crashes within 2 min it logs `GAVE UP <service>` and stops restarting that service | Automatic; if it gave up, the step timeout or the client timeout below tells the user | `supervisor` › SV1 |
-| The web server cannot publish the user's query (Kafka down) | It sends an `error` frame with `code:"unavailable"` and forgets the request | The user sees "The service is unavailable right now. Try again." with a Try again button. A paused broker is slower: each kafkajs produce attempt times out after about 30 s, so the 90 s client timeout (next row) usually fires first | — |
-| Nothing answers for 90 s (e.g. the orchestrator is down) | The UI fails the in-flight request after 90 s without a frame (reset by `ack` and `tool`) | The user sees "No response after 90 s. The request may still finish; try again." with a Try again button; a late answer is ignored | — |
-| WebSocket disconnect while a request is in flight | The UI marks the in-flight request failed when the socket closes, then reconnects after 3 s | The user sees "Connection lost while waiting for the answer." with a Try again button | — |
-| Duplicate `PlanCompleted` or synthesize command | The synthesizer's `done:<cid>` marker (see Idempotency) | One answer, one history entry, one LLM call | `idempotency` › D4; `crash-synthesizer` › S1–S4 |
-| `history.json` corrupt or half-written | Writes are atomic (temp file + rename). A file that does not validate is quarantined to `history.json.corrupt-<ts>` by the writer; readers log ERROR and use no history | Answers keep arriving; the earlier context is kept on disk | — |
+- `KEEP_BROKER=1` keeps the broker between runs; `bun run test:int -t "<pattern>"` filters by test name; `TEST_KAFKA_PORT` and `PYTHON_BIN` override the broker port and the interpreter.
+- `KAFKA_MAX_BLOCK_MS`: `rag.test.ts` sets 3000 so a cold RAG producer gives up fast.
+- Fault points: `FAULT_DIR` enables them; `FAULT_CRASH` and `FAULT_HOLD` take `<point>[@<decision>]`. The `#<n>` selector (n-th call) exists only in the Python twin, [`fault_point.py`](src/python/rag/fault_point.py).
+- `HF_HOME` and `HF_HUB_OFFLINE` are the CI offline-model knobs.
 
-Full reproduction steps: [`docs/resilience-demo.md`](docs/resilience-demo.md)
+## Known limitations
 
----
+**Scale and state**
 
-## Known limitations (current behavior)
+- One instance per service. The orchestrator is single by design (LevelDB lock plus the partition invariant). Each service handles one message at a time, so the 3 partitions give ordering, not throughput.
+- Plan tombstones and `.synth-store/` `done:` keys grow forever; nothing prunes them.
+- Step timers live in the orchestrator. While it is down, no timeout fires. On restart they are re-armed at the original deadline, but an overdue timeout is applied only once the restarted orchestrator owns the partition again. After a crash that waits for the dead member's session to expire, about 30 s with the defaults (`KAFKA_SESSION_TIMEOUT_MS`), so a pending step can time out that much late.
+- State is local files. `history.json` has a single writer (the synthesizer). `PlanState` in LevelDB is not schema-validated; history is.
+- Kafka keeps its default 7-day retention. State lives in LevelDB and is not rebuilt from the log.
+- Steps run sequentially; independent steps are not parallelized.
 
-| Limitation | Fixed in |
-|---|---|
-| The router is not idempotent: a `UserQueryReceived` that Kafka redelivers (for example after a consumer-group rebalance) is planned again and costs a second LLM call. The orchestrator ignores the duplicate `PlanGenerated`, so the user still gets one answer | Known design limit |
-| With the default `KAFKA_MAX_BLOCK_MS` (60000, the kafka-python default), a RAG worker whose producer has not yet sent to a topic blocks up to 60 s on a down broker before it exits and is restarted. The integration suite sets 3000 | Known design limit |
-| The integration tests use `KAFKA_OFFSET_RESET=earliest` on brand-new namespaces, so the production `latest` reset is not integration-tested; and only the OpenAI-compatible provider path is (Ollama is unit-tested) | Known design limit |
-| Env-gated fault points (`shared/testing/faultPoint.ts`, `fault_point.py`) exist in service code. They are no-ops unless `FAULT_DIR` is set, which only the integration suite does | Known design limit |
-| The supervisor is dev-grade: one machine, no health checks, no restart after it gives up on a service, and if the supervisor itself is killed (`kill -9`) its children keep running until `bun run stop` finds them through their pid files. docker-compose or k8s restart policies are the at-scale answer | Known design limit |
-| Plan tombstones (`completed` and `failed`) are kept in `.plan-store/` forever, and `.synth-store/` keeps a small `done:<cid>` marker per conversation forever; there is no pruning | Known design limit |
-| Step timers live in the orchestrator process, so no timeout fires while it is down (they are re-armed from the persisted deadline on restart, and overdue ones fire immediately). The client's idle timeout covers that case, and it is fixed at 90 s (not configurable) | Known design limit |
-| Only the synthesizer writes `history.json` (atomic file replace, in-process mutex, no cross-process lock). A second writer process would lose updates | Known design limit |
-| A poison message is dead-lettered once per consumer group that handles its type, so one bad message can produce several records (`consumer.group` tells them apart). There is no DLQ replay tool | Known design limit |
-| The unknown-error retry budget (3 attempts) is held in memory and resets when the process restarts. The Python RAG worker has no bounded retry: a failure other than poison crashes it uncommitted, and it is redelivered when the supervisor restarts it | Known design limit |
-| A RAG result with no `value` (no price line found, even after the full-source fallback) makes `{{step_N.result}}` fall back to `context`, and `exchange` parses the first number in that text, which can be the wrong one (for example a model name). The fallback also takes the first price line in the top-ranked source, so an add-on line (MacBook AppleCare `$299`, Tesla FSD `$8,000`) wins if its chunk ranks above the headline chunk | Known design limit |
-| `PlanState` in LevelDB is not schema-validated (`history.json` is), and the Python worker hardcodes the topic names | Known design limit |
-| Each service handles one message at a time (`consumer.run` sets no `partitionsConsumedConcurrently`, one instance per group), so 3 partitions give no parallelism today | Known design limit |
-| Orchestrator dispatches one step at a time; independent steps are not parallelised | Known design limit |
-| Weather and exchange-rate data are stubbed (11 cities, static rates) | Known design limit |
-| The regex fallback planner (`PRODUCT_REGEX`) only knows iphone, macbook, tesla, model 3/s/x/y, cybertruck and generic words (product, laptop, phone, ...). It has no rule for iPad, Honda or the newer products (Galaxy S25, Sony WH-1000XM5, PlayStation 5 Pro, Nintendo Switch 2, Toyota Camry); the LLM planner lists them in its prompt and does not depend on the regex | Known design limit |
+**Delivery**
 
----
+- Downstream events are at-least-once. A crash window can deliver a duplicate answer frame; the UI shows the first.
+- The router is not idempotent. A `UserQueryReceived` redelivered after a rebalance is planned again, which costs a second LLM call. The orchestrator ignores the resulting duplicate `PlanGenerated` (`duplicate-plan`, D3), so the user still gets one answer.
+- Retry budgets. The TypeScript unknown-error budget (3 attempts) resets when a process restarts. The Python worker has no bounded retry for unknown errors; a restart is its only redelivery.
 
-## Benchmark
+**Operations**
 
-Single local run, 2026-04-05, `LLM_PROVIDER=openai` (gpt-4o-mini), earlier 3-product KB, 27 queries, session history enabled. Latencies come from `[Benchmark]` log deltas; it has not been re-run since.
+- The supervisor is dev-grade: local processes with restart backoff, giving up after 5 crashes in 2 minutes. It is not a production process manager.
+- The client idle timeout is fixed at 90 s.
 
-| Component | Avg latency |
-|---|---|
-| RouterService | ~1,113 ms |
-| Tool execution (dispatch to final result, orchestrator view) | ~39 ms overall (simple tools ~14 ms, RAG ~65 ms) |
-| AnswerSynthesizer | ~2,189 ms |
-| **End-to-end** | **~3,341 ms** |
+**RAG and data**
 
-Everything except the two LLM calls accounts for under 50 ms; the LLM calls are ~99% of end-to-end latency.
+- Retrieval and pricing:
+  - Product-name matching only reorders the sources retrieval returned; a product outside the top-K is never selected.
+  - Name tokens must appear as whole words, so `galaxy` alone, or `PS5` against the stem token `ps5` when the query says "PS 5", can miss.
+  - After the reorder, chunks are no longer in pure score order.
+  - The price rule takes the first price line in the top source, so an add-on line (MacBook AppleCare `$299`, Tesla FSD `$8,000`) wins if its chunk ranks above the headline chunk. With no price at all there is no `value`, and `exchange` parses the first number in the context text.
+- The RAG worker hardcodes the logical topic names. With the default `KAFKA_MAX_BLOCK_MS` (60000), a cold producer, one that has not sent yet, blocks up to 60 s on a down broker before it exits.
+- Weather and FX data are stubbed. The regex fallback planner has no keyword for iPad, Honda or any of the 6 newer products (Galaxy S25, Galaxy S25 Ultra, Sony WH-1000XM5, PlayStation 5 Pro, Nintendo Switch 2, Toyota Camry). A query naming one reaches RAG through the fallback only via a generic word such as "phone" or "laptop".
 
----
+**Testing**
 
-## Conclusions
+- What the integration suite does not exercise. Tests run on fresh namespaces with `KAFKA_OFFSET_RESET=earliest`; production uses `latest`, so a message produced before a brand-new group's first join is skipped, and that reset is not integration-tested. Only the OpenAI-compatible LLM path is integration-tested; Ollama is unit-tested.
+- Fault points live in service code. They are no-ops unless `FAULT_DIR` is set.
 
-**Why Kafka as the backbone:** Topics keyed by `conversationId` give per-conversation ordering, and consumer group offsets give redelivery after a crash. Events stay on the topics for Kafka's default 7-day retention, so a conversation can be traced by key. There is no replay: state lives in LevelDB.
+## What I'd do at scale
 
-**Stateful processing:** The Orchestrator accumulates state incrementally from the event stream rather than polling a DB. `{{step_N.result}}` placeholder resolution enables chained tool data flow without any shared memory. The Aggregator is fully stateless — by the time `PlanCompleted` arrives, all results are embedded in its payload.
-
-**CQRS:** Separating commands (`user-commands`, `tool-invocation-requests`) from facts (`conversation-events`) means each service is independently deployable and testable. Delivery is at-least-once, and the orchestrator makes its own state transitions idempotent (see Idempotency and Known limitations).
-
-**Trade-offs:**
-
-| Trade-off | Detail |
-|---|---|
-| Eventual consistency | The web server consumes `conversation-events` and pushes updates over WebSocket — no synchronous request/response |
-| Debugging complexity | A single-step query produces 7 events (plus 2 per extra step) across 3 topics; the dead-letter queue is used only for poison messages. Correlate by `conversationId` |
-| Operational overhead | 10 processes + Kafka (+ Ollama optionally) vs a single REST API |
-| Sequential execution | Orchestrator dispatches one step at a time — independent steps are not parallelised |
-
-**Future improvements:** Kafka Streams DSL, Confluent Schema Registry, parallel tool dispatch, Grafana + Prometheus observability, multi-broker cluster.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Broker | Apache Kafka 3.8.0 (KRaft — no ZooKeeper) |
-| Runtime | Bun 1.0+ (TypeScript) |
-| Frontend | React 19 + Vite + Tailwind CSS v4 |
-| LLM | Ollama (default `llama3.2:1b`) or OpenAI gpt-4o-mini, via `LLM_PROVIDER` |
-| Vector DB | Embedded ChromaDB (`PersistentClient`) + sentence-transformers/all-MiniLM-L6-v2 |
-| State store | LevelDB (via `level` npm package) |
-| Infrastructure | Docker + docker-compose |
-
----
-
-## File Structure
-
-```
-├── infra/
-│   ├── docker-compose.yml             # Kafka (KRaft) + Ollama
-│   ├── docker-compose.test.yml        # dedicated test broker on :19092 (used by bun run test:int)
-│   └── create-topics.sh               # create 4 topics × 3 partitions
-├── scripts/
-│   ├── gen-schemas.ts                 # zod → shared/schemas/*.json (bun run schemas:gen / schemas:check)
-│   ├── start.ts                       # checks, topics, conditional model pull, then the detached supervisor
-│   ├── supervisor.ts                  # runs the 10 services, restarts crashes with backoff, writes .run/*.pid
-│   ├── stop.ts                        # pid-based stop (only verified pids from .run/)
-│   ├── lib/                           # supervisorPolicy.ts, pidFiles.ts, startChecks.ts (+ tests)
-│   └── logs/services/                 # per-service log files (append mode) + supervisor.log
-├── src/
-│   ├── frontend/                      # React 19 + Vite web UI (chat/inFlight.ts: in-flight tracking and idle timeout)
-│   ├── node/
-│   │   ├── core/                      # routerService.ts, webServer.ts (+ clientFrames.ts)
-│   │   ├── orchestration/             # orchestrator.ts (+ planTransition.ts, stepTimers.ts), aggregator.ts, answerSynthesizer.ts (+ synthesize.ts)
-│   │   └── apps/                      # mathApp, weatherApp, exchangeApp, generalChatApp
-│   └── python/
-│       └── rag/                       # rag_retriever.py, contracts.py, kafka_config.py, fault_point.py, price.py, index_kb.py, tests
-├── test/
-│   └── integration/                   # real-broker tests: setup.ts (broker lifecycle), harness/ (namespace, service runner, observer, settle, fake LLM, fault control), *.test.ts
-├── shared/
-│   ├── testing/                       # faultPoint.ts (env-gated crash/hold/count points)
-│   ├── kafka/                         # client.ts (KafkaJS wrapper, publish, subscribeAndRun), config.ts (env settings), errors.ts, consume.ts (validate, classify, dead-letter), deadLetter.ts
-│   ├── llm/                           # callLLM.ts (budget, timeouts, retries), providers.ts (Ollama / lazy OpenAI), errors.ts (LlmError)
-│   ├── schemas/                       # zod contracts (11 messages), generated JSON Schema, registry, test fixtures
-│   ├── prompts/                       # LLM prompt functions
-│   ├── state/                         # planStore.ts (LevelDB plans), synthStore.ts (LevelDB synthesizer dedupe + questions), historyStore.ts (history.json)
-│   └── topics.ts                      # topic name constants
-├── .run/                              # supervisor and service pid files (runtime, gitignored)
-├── history.json                       # per-session chat history (runtime file, gitignored)
-└── data/products/                     # 11 .txt files, one per product (RAG knowledge base, sample data)
-```
-
----
+- Schema Registry with Avro or Protobuf and compatibility rules enforced at produce time, in place of generated-JSON-Schema discipline.
+- Partition-owned state: Kafka Streams-style state stores with changelog topics, or per-partition stores handed over on rebalance. That allows several orchestrators and removes the single-instance and retention limits.
+- A compacted topic or a TTL for tombstones and dedupe keys.
+- A transactional outbox (or Kafka transactions) where state moves to a shared database or a handler has non-idempotent side effects. Here input redelivery plus idempotent transitions already give the same guarantee, so this is a condition, not a gap.
+- Kubernetes Deployments with restart policies and liveness probes instead of the local supervisor.
+- A DLQ replay tool, alerting on DLQ rate and consumer lag, and OpenTelemetry traces keyed by `conversationId`.
+- Parallel dispatch for independent steps (a DAG plan).
 
 ## Docs
 
-| Document | Content |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | Detailed architecture + event schemas |
-| [`docs/resilience-demo.md`](docs/resilience-demo.md) | Crash + recovery reproduction steps |
+- [`docs/architecture.md`](docs/architecture.md): event catalog, per-service details, state stores, infrastructure, repository layout.
+- [`docs/resilience-demo.md`](docs/resilience-demo.md): manual scenarios you can run yourself, each with its evidence.
+- [`.env.example`](.env.example): every runtime environment variable, with defaults.
+
+## License
+
+[MIT](LICENSE)
