@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { tag, token, useHarness } from "./harness";
+import { tag, token, useHarness, waitFor } from "./harness";
 
 const STEP_TIMEOUT_MS = 2000;
 
@@ -25,6 +25,9 @@ function expectTimedOut(cid: string) {
   expect(h.observer.dlq().filter((r) => r.conversationId === cid)).toEqual([]);
 }
 
+// T1's conversation, which T2 continues
+let t1Cid: string | undefined;
+
 describe("step timeouts", () => {
   test("T1: a step nobody answers times out", async () => {
     const t = token();
@@ -38,6 +41,32 @@ describe("step timeouts", () => {
     expect(h.observer.requestsFor(res.cid, 0)).toHaveLength(1);
     expectTimedOut(res.cid);
     expect(h.fake.calls("synth", t)).toEqual([]);
+    t1Cid = res.cid;
+  });
+
+  // runs right after T1: the math worker finally starts and answers the request T1 timed out
+  test("T2: a result that arrives after the timeout is ignored", async () => {
+    const cid = t1Cid;
+    if (cid === undefined) throw new Error("T2 continues T1: run the file without -t, or with -t 'T1|T2'");
+    expect(h.observer.resultsFor(cid, 0)).toEqual([]); // nobody has answered yet
+
+    try {
+      await h.services.start("math"); // reads the old request from the beginning of the topic
+      await waitFor(() => h.observer.resultsFor(cid, 0)[0], {
+        what: `the late ToolInvocationResulted{0} for ${cid}`,
+        context: () => h.observer.describe(cid),
+      });
+      await h.settle(); // the orchestrator has handled it
+    } finally {
+      await h.services.stop("math"); // T3 needs step 0 to stay unanswered
+    }
+
+    expect(h.observer.resultsFor(cid, 0)).toHaveLength(1);
+    expect(h.observer.events(cid, "PlanFailed")).toHaveLength(1);
+    expect(h.observer.events(cid, "PlanCompleted")).toEqual([]);
+    expect(h.observer.events(cid, "SynthesizeFinalAnswerRequested")).toEqual([]);
+    expect(h.observer.events(cid, "FinalAnswerSynthesized")).toEqual([]);
+    expect(h.observer.dlq().filter((r) => r.conversationId === cid)).toEqual([]);
   });
 
   test("T3: a restarted orchestrator re-arms the timer with the ORIGINAL deadline", async () => {

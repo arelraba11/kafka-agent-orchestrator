@@ -71,6 +71,9 @@ function errorResponse(status: number, headers: Record<string, string> = {}): Re
 export function startFakeLlm(): FakeLlm {
   const scripts = new Map<string, FakeResponse[]>();
   const log: LlmCall[] = [];
+  // Requests answered with `hang`: released when the client gives up, and on stop() (a handler
+  // that never returns would keep server.stop() waiting).
+  const hanging = new Set<() => void>();
   const key = (stage: Stage, token: string) => `${stage}:${token}`;
 
   const server = Bun.serve({
@@ -108,7 +111,15 @@ export function startFakeLlm(): FakeLlm {
       }
       if ("hang" in next) {
         record("hang");
-        return new Promise<Response>(() => {}); // the client's per-attempt timeout aborts it
+        // never answered: the client's per-attempt timeout aborts it
+        return new Promise<Response>((resolve) => {
+          const release = () => {
+            hanging.delete(release);
+            resolve(new Response(null, { status: 499 }));
+          };
+          hanging.add(release);
+          req.signal.addEventListener("abort", release);
+        });
       }
       record(`status-${next.status}`);
       return "retryAfter" in next
@@ -135,6 +146,7 @@ export function startFakeLlm(): FakeLlm {
       for (let i = log.length - 1; i >= 0; i--) if (log[i].kind === "unmatched" || !log[i].authOk) log.splice(i, 1);
     },
     stop: async () => {
+      for (const release of [...hanging]) release();
       await server.stop(true);
     },
   };
