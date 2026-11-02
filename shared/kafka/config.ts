@@ -27,16 +27,23 @@ export function fromBeginningFromEnv(env: Env = process.env): boolean {
   throw new Error(`KAFKA_OFFSET_RESET must be "earliest" or "latest", got ${JSON.stringify(v)}`);
 }
 
-/** Group id (prefixed with the namespace) plus the optional session/heartbeat/rebalance timeouts. */
+/**
+ * Group id (prefixed with the namespace) plus the optional session/heartbeat/rebalance timeouts
+ * and KAFKA_MAX_WAIT_MS (the fetch long-poll, kafkajs `maxWaitTimeInMs`, default 5000).
+ * maxWait must stay well below the session timeout: kafkajs sends heartbeats between fetches,
+ * so an idle member whose fetch waits longer than the session is expired by the broker.
+ */
 export function consumerConfig(groupId: string, env: Env = process.env): ConsumerConfig {
   const sessionTimeout = envInt(env, "KAFKA_SESSION_TIMEOUT_MS");
   const heartbeatInterval = envInt(env, "KAFKA_HEARTBEAT_INTERVAL_MS");
   const rebalanceTimeout = envInt(env, "KAFKA_REBALANCE_TIMEOUT_MS");
+  const maxWaitTimeInMs = envInt(env, "KAFKA_MAX_WAIT_MS");
   return {
     groupId: physicalGroup(namespaceFromEnv(env), groupId),
     ...(sessionTimeout !== undefined ? { sessionTimeout } : {}),
     ...(heartbeatInterval !== undefined ? { heartbeatInterval } : {}),
     ...(rebalanceTimeout !== undefined ? { rebalanceTimeout } : {}),
+    ...(maxWaitTimeInMs !== undefined ? { maxWaitTimeInMs } : {}),
   };
 }
 

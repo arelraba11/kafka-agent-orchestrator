@@ -114,6 +114,10 @@ export async function createServices(
       KAFKA_SESSION_TIMEOUT_MS: "3000",
       KAFKA_HEARTBEAT_INTERVAL_MS: "500",
       KAFKA_REBALANCE_TIMEOUT_MS: "5000",
+      // Rule: the fetch wait must be well below the session timeout. kafkajs sends heartbeats
+      // between fetches, so with kafkajs's default 5000 ms wait an idle member is expired by a
+      // 3000 ms session about every 5 s, and the resulting rebalance redelivers in-flight messages.
+      KAFKA_MAX_WAIT_MS: "500",
       PLAN_STORE_PATH: ns.paths.planStore,
       SYNTH_STORE_PATH: ns.paths.synthStore,
       HISTORY_PATH: ns.paths.history,

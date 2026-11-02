@@ -54,6 +54,16 @@ describe("consumerConfig", () => {
   });
 });
 
+describe("consumerConfig fetch wait", () => {
+  test("KAFKA_MAX_WAIT_MS maps to maxWaitTimeInMs; unset leaves kafkajs's default (5000)", () => {
+    expect(consumerConfig("g", {})).not.toHaveProperty("maxWaitTimeInMs");
+    expect(consumerConfig("g", { KAFKA_MAX_WAIT_MS: "500" })).toEqual({ groupId: "g", maxWaitTimeInMs: 500 });
+  });
+  test("a non-positive value is rejected with the variable name", () => {
+    expect(() => consumerConfig("g", { KAFKA_MAX_WAIT_MS: "0" })).toThrow(/KAFKA_MAX_WAIT_MS/);
+  });
+});
+
 describe("kafkaConfig", () => {
   test("defaults equal the previous hardcoded config", () => {
     expect(kafkaConfig({})).toEqual({
