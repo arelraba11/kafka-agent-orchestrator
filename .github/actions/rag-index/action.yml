@@ -1,0 +1,21 @@
+name: rag-index
+description: all-MiniLM-L6-v2 model cache and the chroma_db index (needs the python-venv action first).
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v6
+      id: hf
+      with:
+        path: ~/.cache/huggingface
+        key: hf-all-MiniLM-L6-v2-${{ runner.os }}-${{ hashFiles('src/python/rag/requirements.txt') }}
+    - uses: actions/cache@v6
+      id: chroma
+      with:
+        path: src/python/rag/chroma_db
+        key: chroma-${{ runner.os }}-${{ hashFiles('data/products/**', 'src/python/rag/index_kb.py', 'src/python/rag/requirements.txt') }}
+    - name: Build index and warm the model (any cache miss)
+      if: steps.hf.outputs.cache-hit != 'true' || steps.chroma.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        src/python/venv/bin/python src/python/rag/index_kb.py | tee index.log
+        grep -F "Indexed 56 chunks" index.log

@@ -1,0 +1,21 @@
+name: python-venv
+description: Python 3.12 plus the RAG worker venv at src/python/venv (CPU torch), cached by interpreter patch version and requirements.txt.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      id: py
+      with:
+        python-version: "3.12"
+    - uses: actions/cache@v6
+      id: venv
+      with:
+        path: src/python/venv
+        key: venv-${{ runner.os }}-${{ steps.py.outputs.python-version }}-${{ hashFiles('src/python/rag/requirements.txt') }}-torch2.15.0-cpu
+    - name: Create venv (cache miss)
+      if: steps.venv.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        python -m venv src/python/venv
+        src/python/venv/bin/pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+        src/python/venv/bin/pip install -r src/python/rag/requirements.txt
