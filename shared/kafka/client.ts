@@ -1,11 +1,6 @@
-import {
-  Kafka,
-  Producer,
-  Consumer,
-  EachMessagePayload,
-  KafkaConfig,
-} from "kafkajs";
-import { TOPICS, type TopicName } from "../topics";
+import { Kafka, Producer, Consumer, EachMessagePayload } from "kafkajs";
+import { TOPICS, logicalTopic, physicalTopic, type TopicName } from "../topics";
+import { consumerConfig, fromBeginningFromEnv, kafkaConfig, namespaceFromEnv } from "./config";
 import {
   MESSAGE_SCHEMAS,
   TOPIC_MESSAGES,
@@ -20,16 +15,9 @@ import { OutboundContractViolationError, ProducerError, toIssues } from "./error
 
 // ─── Singleton Kafka instance ────────────────────────────────────────────────
 
-const config: KafkaConfig = {
-  clientId: "distributed-bot",
-  brokers: ["localhost:9092"],
-  retry: {
-    initialRetryTime: 500,
-    retries: 10,
-  },
-};
-
-export const kafka = new Kafka(config);
+// Broker, retries and request timeout come from env (see config.ts); defaults are the
+// original hardcoded values.
+export const kafka = new Kafka(kafkaConfig());
 
 // ─── Retry helper ─────────────────────────────────────────────────────────────
 // Retries an async operation with linear backoff. Used to absorb the window
@@ -115,7 +103,7 @@ export async function publish<T extends TopicName>(
   const key = keyOf(topic, message);
   try {
     await producer.send({
-      topic,
+      topic: physicalTopic(namespaceFromEnv(), topic),
       messages: [{ key, value: JSON.stringify(message) }],
     });
   } catch (cause) {
@@ -127,7 +115,7 @@ export async function publish<T extends TopicName>(
 
 export async function createConsumer(groupId: string): Promise<Consumer> {
   return withRetry(`createConsumer:${groupId}`, async () => {
-    const consumer = kafka.consumer({ groupId });
+    const consumer = kafka.consumer(consumerConfig(groupId));
     await consumer.connect();
     return consumer;
   });
@@ -158,7 +146,10 @@ export async function subscribeAndRun<N extends MessageName>(opts: SubscribeOpti
   // Retry subscribe independently: UNKNOWN_TOPIC_OR_PARTITION resolves once
   // the broker has propagated topic metadata (typically within a few seconds).
   await withRetry(`subscribe:${topic}`, async () => {
-    await consumer.subscribe({ topic, fromBeginning: false });
+    await consumer.subscribe({
+      topic: physicalTopic(namespaceFromEnv(), topic),
+      fromBeginning: fromBeginningFromEnv(),
+    });
   });
 
   const deps: ConsumeDeps = {
@@ -170,10 +161,13 @@ export async function subscribeAndRun<N extends MessageName>(opts: SubscribeOpti
   const ctx = { topic, group: groupId, service, types, onDeadLettered };
 
   await consumer.run({
-    eachMessage: async ({ message, partition }: EachMessagePayload) => {
+    eachMessage: async ({ topic: received, message, partition }: EachMessagePayload) => {
+      // Back to the logical name at the edge: the handler and any DLQ record never see the namespace.
+      const logical = logicalTopic(namespaceFromEnv(), received);
+      if (logical === null) throw new Error(`received a message from unexpected topic ${received}`);
       await processMessage(
         {
-          topic,
+          topic: logical,
           partition,
           offset: message.offset,
           key: message.key,

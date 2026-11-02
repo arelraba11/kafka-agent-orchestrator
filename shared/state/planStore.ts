@@ -19,7 +19,10 @@ export interface PlanState {
 
 // ─── DB instance ──────────────────────────────────────────────────────────────
 
-const DB_PATH = join(process.cwd(), ".plan-store");
+/** PLAN_STORE_PATH, default `<cwd>/.plan-store`. */
+export function defaultPlanStorePath(env: Record<string, string | undefined> = process.env): string {
+  return env.PLAN_STORE_PATH || join(process.cwd(), ".plan-store");
+}
 
 let db: Level<string, string>;
 
@@ -27,9 +30,9 @@ let db: Level<string, string>;
 
 /**
  * Opens the store. `path` is optional so tests can use a temp dir; the default is
- * `.plan-store` in the working directory.
+ * PLAN_STORE_PATH, else `.plan-store` in the working directory.
  */
-export async function initializeStore(path: string = DB_PATH): Promise<void> {
+export async function initializeStore(path: string = defaultPlanStorePath()): Promise<void> {
   if (db && db.status === "open") return;
   try {
     db = new Level<string, string>(path, { valueEncoding: "utf8" });

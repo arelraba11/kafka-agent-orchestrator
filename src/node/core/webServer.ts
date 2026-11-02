@@ -10,11 +10,12 @@ import type { UserQueryReceived } from "../../../shared/schemas/UserQueryReceive
 import type { ConversationFailed } from "../../../shared/schemas/ConversationFailed";
 import { WEB_OWNED_TYPES } from "../../../shared/kafka/failureOwnership";
 import { stepTimeoutMs } from "../../../shared/stepTimeout";
+import { webPort } from "../../../shared/webPort";
 import { answerFrame, toClientFrame, toolFrame, unavailableFrame } from "./clientFrames";
 import { sweepPending } from "./pendingSweep";
 import { join } from "path";
 
-const PORT = 3001;
+const PORT = webPort();
 const CONSUMER_GROUP = "ui-web-final-answer";
 const DIST_DIR = join(import.meta.dir, "../../../src/frontend/dist");
 const FRAME_CONFIG = { stepTimeoutMs: stepTimeoutMs() };

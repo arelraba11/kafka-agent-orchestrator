@@ -48,12 +48,15 @@ export interface SynthStore {
   batch(ops: BatchOp[]): Promise<void>;
 }
 
-const DB_PATH = join(process.cwd(), ".synth-store");
+/** SYNTH_STORE_PATH, default `<cwd>/.synth-store`. */
+export function defaultSynthStorePath(env: Record<string, string | undefined> = process.env): string {
+  return env.SYNTH_STORE_PATH || join(process.cwd(), ".synth-store");
+}
 
 let db: Level<string, string>;
 
 /** Opens the store. `path` is optional so tests can use a temp dir. */
-export async function initializeSynthStore(path: string = DB_PATH): Promise<void> {
+export async function initializeSynthStore(path: string = defaultSynthStorePath()): Promise<void> {
   if (db && db.status === "open") return;
   try {
     db = new Level<string, string>(path, { valueEncoding: "utf8" });

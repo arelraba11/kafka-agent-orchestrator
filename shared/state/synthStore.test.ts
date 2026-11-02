@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { StoreError } from "../kafka/errors";
-import { closeSynthStore, initializeSynthStore, synthStore } from "./synthStore";
+import { closeSynthStore, defaultSynthStorePath, initializeSynthStore, synthStore } from "./synthStore";
 
 const CID = "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b";
 
@@ -87,5 +87,12 @@ describe("synthStore: I/O failures", () => {
     await expect(synthStore.get(`done:${CID}`)).rejects.toBeInstanceOf(StoreError);
     await expect(synthStore.put(`done:${CID}`, { at: 2 })).rejects.toBeInstanceOf(StoreError);
     await expect(synthStore.batch([{ type: "del", key: `q:${CID}` }])).rejects.toBeInstanceOf(StoreError);
+  });
+});
+
+describe("defaultSynthStorePath", () => {
+  test("is <cwd>/.synth-store unless SYNTH_STORE_PATH is set", () => {
+    expect(defaultSynthStorePath({})).toBe(join(process.cwd(), ".synth-store"));
+    expect(defaultSynthStorePath({ SYNTH_STORE_PATH: "/x/y" })).toBe("/x/y");
   });
 });

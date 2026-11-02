@@ -26,13 +26,17 @@ from kafka import KafkaConsumer, KafkaProducer
 from sentence_transformers import SentenceTransformer
 
 import contracts
+import kafka_config
 from price import price_with_fallback
 from source_match import prefer_product_match
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:9092")
+# Env-driven (kafka_config.py); defaults equal the old hardcoded values. The namespace is
+# applied only where a topic or group reaches Kafka; DLQ records stay logical.
+KAFKA_BROKERS = kafka_config.brokers()
+NAMESPACE = kafka_config.namespace()
 CONSUMER_GROUP = "rag-tool-worker"
 INPUT_TOPIC = "tool-invocation-requests"
 OUTPUT_TOPIC = "conversation-events"
@@ -65,22 +69,25 @@ def load_collection() -> chromadb.Collection:
 # ---------------------------------------------------------------------------
 def make_consumer() -> KafkaConsumer:
     return KafkaConsumer(
-        INPUT_TOPIC,
-        bootstrap_servers=KAFKA_BROKER,
-        group_id=CONSUMER_GROUP,
-        auto_offset_reset="latest",  # matches the TS consumers (fromBeginning: false)
+        kafka_config.physical_topic(NAMESPACE, INPUT_TOPIC),
+        bootstrap_servers=KAFKA_BROKERS,
+        group_id=kafka_config.physical_group(NAMESPACE, CONSUMER_GROUP),
+        auto_offset_reset=kafka_config.offset_reset(),  # latest by default, like the TS consumers
         enable_auto_commit=False,   # commit manually, only after the result send is acked
         # raw bytes: a malformed value must not raise inside the consumer iterator
+        **kafka_config.consumer_kwargs(),
     )
 
 
 def make_producer() -> KafkaProducer:
-    return KafkaProducer(bootstrap_servers=KAFKA_BROKER)
+    return KafkaProducer(bootstrap_servers=KAFKA_BROKERS, **kafka_config.producer_kwargs())
 
 
 def _send_confirmed(producer: KafkaProducer, topic: str, key: bytes | None, value: bytes) -> None:
     # .get() raises if the send failed, so the caller never commits past a lost record
-    producer.send(topic, key=key, value=value).get(timeout=10)
+    producer.send(kafka_config.physical_topic(NAMESPACE, topic), key=key, value=value).get(
+        timeout=kafka_config.send_timeout_s()
+    )
     producer.flush()
 
 
@@ -105,7 +112,7 @@ def dead_letter(producer: KafkaProducer, consumer: KafkaConsumer, message, exc: 
     message is redelivered: a message is never skipped without a DLQ record.
     """
     record = contracts.dead_letter_record(
-        topic=message.topic,
+        topic=kafka_config.logical_topic(NAMESPACE, message.topic) or message.topic,
         partition=message.partition,
         offset=message.offset,
         key=message.key,
@@ -176,7 +183,7 @@ def fetch_source_chunks(collection: chromadb.Collection, source: str) -> list[di
 # ---------------------------------------------------------------------------
 def run() -> None:
     print("[rag_retriever] ===== RAG Retriever Service =====")
-    print(f"[rag_retriever] Kafka broker  : {KAFKA_BROKER}")
+    print(f"[rag_retriever] Kafka brokers : {','.join(KAFKA_BROKERS)}")
     print(f"[rag_retriever] Consumer group: {CONSUMER_GROUP}")
     print(f"[rag_retriever] Input topic   : {INPUT_TOPIC}")
     print(f"[rag_retriever] Output topic  : {OUTPUT_TOPIC}")

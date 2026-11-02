@@ -9,6 +9,7 @@ import { TOPICS } from "../../../shared/topics";
 import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
 import { FAILURE_OWNERSHIP } from "../../../shared/kafka/failureOwnership";
 import { callLLM } from "../../../shared/llm/callLLM";
+import { synthBudgetMs } from "../../../shared/llm/budgets";
 import { getHistory, appendToHistory } from "../../../shared/state/historyStore";
 import { initializeSynthStore, synthStore } from "../../../shared/state/synthStore";
 import { cacheUserQuery, synthesize, type SynthesizeDeps } from "./synthesize";
@@ -18,7 +19,7 @@ import { cacheUserQuery, synthesize, type SynthesizeDeps } from "./synthesize";
 // survives a restart) and SynthesizeFinalAnswerRequested (synthesized). The ordering
 // rules live in synthesize.ts.
 
-const SYNTHESIS_LLM = { budgetMs: 60_000, maxAttempts: 3 } as const;
+const SYNTHESIS_LLM = { budgetMs: synthBudgetMs(), maxAttempts: 3 } as const;
 
 await initializeSynthStore();
 console.log("[synthesizer] SynthStore initialized");

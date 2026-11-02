@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { StoreError } from "../kafka/errors";
-import { closeStore, getPlan, initializeStore, listRunningPlans, savePlan, type PlanState } from "./planStore";
+import { closeStore, defaultPlanStorePath, getPlan, initializeStore, listRunningPlans, savePlan, type PlanState } from "./planStore";
 
 const CID = "3f2b8c1e-9d4a-4b6f-8a2e-1c5d7e9f0a3b";
 
@@ -74,5 +74,12 @@ describe("planStore", () => {
     await closeStore();
     await expect(getPlan(CID)).rejects.toBeInstanceOf(StoreError);
     await expect(savePlan(CID, STATE)).rejects.toBeInstanceOf(StoreError);
+  });
+});
+
+describe("defaultPlanStorePath", () => {
+  test("is <cwd>/.plan-store unless PLAN_STORE_PATH is set", () => {
+    expect(defaultPlanStorePath({})).toBe(join(process.cwd(), ".plan-store"));
+    expect(defaultPlanStorePath({ PLAN_STORE_PATH: "/x/y" })).toBe("/x/y");
   });
 });
