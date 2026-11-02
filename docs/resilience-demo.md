@@ -1,6 +1,6 @@
 # Resilience Demo — Kafka AI Agent
 
-Five failure scenarios with the behavior the code has today and how to reproduce each one.
+Ten failure scenarios with the behavior the code has today and how to reproduce each one.
 
 All commands assume the repository root as the working directory, Kafka running via `infra/docker-compose.yml`, and the services started with `bun run start`. Logs are written to `scripts/logs/services/`.
 
@@ -37,9 +37,10 @@ pkill -f "weatherApp.ts"
 # 4. Send another query while the worker is down. Type in the UI:
 weather in haifa
 #    The orchestrator dispatches ToolInvocationRequested to Kafka, but no worker
-#    consumes it. The plan stays pending and no answer arrives.
+#    consumes it. The plan stays pending. After STEP_TIMEOUT_MS (30 s by default)
+#    the plan fails; see Scenario 6.
 
-# 5. Restart the weather worker
+# 5. Restart the weather worker within 30 s of the query
 bun run weather >> scripts/logs/services/weather.log 2>&1 &
 #    The worker reads the pending message from its last committed offset and
 #    emits ToolInvocationResulted. The orchestrator completes the plan and the
@@ -48,7 +49,7 @@ bun run weather >> scripts/logs/services/weather.log 2>&1 &
 
 ### Expected outcome
 
-The UI receives the weather answer for the second query after the worker is back up. No manual Kafka intervention is needed.
+If the worker is back within the step timeout, the UI receives the weather answer for the second query, with no manual Kafka intervention. If it comes back later, the UI has already shown "The weather tool didn't respond within 30 s.", and the late result is logged `ignored reason=plan-terminal`.
 
 ---
 
@@ -58,7 +59,7 @@ The UI receives the weather answer for the second query after the worker is back
 
 **Why it recovers:** Two mechanisms work together. Kafka redelivers events whose offsets the orchestrator had not committed. Plan state lives in LevelDB (`shared/state/planStore.ts`, `.plan-store/`), so when the next `ToolInvocationResulted` for a stored plan arrives, the restarted orchestrator finds the state and continues from the saved `stepIndex`.
 
-There is no startup scan: the orchestrator does not look for incomplete plans when it starts. Because the next request is emitted before the new state is persisted and before the offset is committed, a crash mid-handler replays the triggering event instead of skipping a step.
+The orchestrator does not resume incomplete plans when it starts; its one startup scan re-arms the step timers of plans that were `running` (see Scenario 6). Because the next request is emitted before the new state is persisted and before the offset is committed, a crash mid-handler replays the triggering event instead of skipping a step.
 
 ### Steps
 
@@ -78,6 +79,7 @@ pkill -f "orchestrator.ts"
 bun run orchestrator >> scripts/logs/services/orchestrator.log 2>&1 &
 #    Expected startup lines:
 #      [orchestrator] PlanStore initialized
+#      [orchestrator] rescheduled 0 step timer(s) stepTimeoutMs=30000
 #      [orchestrator] OrchestratorService started.
 
 # 5. Send a new query. Type in the UI:
@@ -111,7 +113,7 @@ New requests complete end-to-end after the restart. A plan that was in flight wh
 ### What is protected
 
 - **Workers filter by `toolName`.** Each worker ignores requests for other tools (`if (req.payload.toolName !== "weather") return;` in `src/node/apps/weatherApp.ts`, and the same in the other workers). That is routing, not deduplication.
-- **A duplicate, stale or out-of-order result never changes the plan.** The orchestrator applies a result only when the plan is `running`, `stepIndex` is the step it awaits, and `toolName` matches that step. Otherwise it writes nothing, emits nothing and logs `ignored reason=<reason>`. The reasons are `unknown-plan`, `plan-terminal` (the plan already completed or failed), `missing-step-index`, `duplicate-step`, `future-step` and `tool-mismatch`.
+- **A duplicate, stale or out-of-order result never changes the plan.** The orchestrator applies a result only when the plan is `running`, `stepIndex` is the step it awaits, and `toolName` matches that step. Otherwise it writes nothing, emits nothing and logs `ignored reason=<reason>`. The reasons are `unknown-plan`, `plan-terminal` (the plan already completed or failed), `missing-step-index`, `duplicate-step`, `future-step` and `tool-mismatch`. A stale `StepTimedOut` is `stale-timeout`.
 - **A replayed `PlanGenerated`** for a conversation that already has a plan is ignored (`duplicate-plan`).
 - **Terminal plans are kept as tombstones**, so a result that arrives after the plan finished is recognised (`plan-terminal`) instead of looking like an unknown conversation.
 - **The RAG worker no longer loses a result.** It commits an offset only after the result send is acknowledged, so a failed send leaves the request uncommitted for redelivery.
@@ -119,8 +121,8 @@ New requests complete end-to-end after the restart. A plan that was in flight wh
 ### What is not protected
 
 - **Workers do not deduplicate**, so a duplicate `ToolInvocationRequested` runs the tool again and emits another result. The orchestrator ignores the extra one (`duplicate-step`).
-- **A duplicate `PlanCompleted` downstream.** If the orchestrator crashes after publishing `PlanCompleted` and before persisting `completed`, the last result is replayed and `PlanCompleted` is published again. The aggregator and synthesizer then run twice, giving two LLM calls and a doubled `history.json` entry. The web client shows only the first answer. Planned for phase 4.
-- **Plan tombstones are never pruned** and grow without bound.
+- **A duplicate `PlanCompleted` is absorbed downstream.** If the orchestrator crashes after publishing `PlanCompleted` and before persisting `completed`, the last result is replayed and `PlanCompleted` is published again. The aggregator emits a second `SynthesizeFinalAnswerRequested`, but the synthesizer recognises the conversation as done and neither calls the LLM nor writes history again (Scenario 8).
+- **Plan tombstones and `.synth-store/` `done:` markers are never pruned** and grow without bound.
 
 ### Steps to reproduce the terminal-plan drop
 
@@ -245,7 +247,7 @@ The aggregator skips the invalid `ToolInvocationResulted` (it handles `PlanCompl
 
 Each service logs one line per record, for example `[kafka] dead-lettered topic=tool-invocation-requests partition=0 offset=3 group=math-tool-worker class=contract-violation reason="invalid ToolInvocationRequested"`. `kafka-consumer-groups.sh` shows `LAG 0` everywhere, no service logs a crash or restart, and the next normal query still completes.
 
-**Not covered:** the dead letter is not acted on. A dead-lettered `ToolInvocationRequested` or `ToolInvocationResulted` leaves its plan `running` until a step timeout exists (phase 4), and there is no replay tool.
+**Not covered:** a dead letter is not replayed (there is no replay tool). A dead-lettered `ToolInvocationRequested` or `ToolInvocationResulted` is not reported by a hook; its plan fails through the step timeout (Scenario 6). Poison messages that a service owns are also reported to the user (Scenario 9).
 
 ---
 
@@ -268,11 +270,173 @@ docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server lo
 
 ### Expected outcome
 
-Three events for that `CID`, in order: `PlanGenerated`, `ToolInvocationResulted` (math, `"error":"Division by zero"`), then `PlanFailed` (`"reason":"Division by zero","failedTool":"math"`). `math.log` shows `error="Division by zero"` and `orchestrator.log` shows `plan FAILED reason=Division by zero`. The `dead-letter-queue` gains no record.
+Three events for that `CID`, in order: `PlanGenerated`, `ToolInvocationResulted` (math, `"error":"Division by zero"`), then `PlanFailed` (`"code":"tool-error","reason":"Division by zero","failedTool":"math"`). `math.log` shows `error="Division by zero"` and `orchestrator.log` shows `PlanFailed code=tool-error failedTool=math reason=Division by zero`. The `dead-letter-queue` gains no record, and every consumer group has lag 0.
 
 (`kafka-console-consumer.sh` ends with a `TimeoutException` after `--timeout-ms`; that is how it exits when it has read everything.)
 
-No socket is pending for an injected conversation, so the web server sends **no** UI frame. This scenario checks the events only. With a real UI query that reaches a failing tool, the web client receives `{type:"error"}`.
+No socket is pending for an injected conversation, so the web server sends **no** UI frame. This scenario checks the events only. With a real UI query that reaches a failing tool, the web client receives `{type:"error", reason:"The math tool failed: Division by zero", failedTool:"math", code:"tool-error", conversationId}`; `toClientFrame`'s mapping is covered by `src/node/core/clientFrames.test.ts`.
+
+---
+
+## Scenario 6 — Unanswered Tool Step (Step Timeout)
+
+**What breaks:** A tool worker is down, paused, or its request or result was dead-lettered, so a dispatched step never gets an answer.
+
+**What the code does:** Every dispatched step has a persisted deadline (`STEP_TIMEOUT_MS`, default 30 s). A timer in the orchestrator publishes `StepTimedOut`; the event is handled in the conversation's partition like any other, so whichever of the result and the timeout comes first in the log wins. The plan becomes `failed` with `PlanFailed{code:"step-timeout"}`, and the user sees "The `<tool>` tool didn't respond within `<n>` s."
+
+### Steps
+
+```bash
+# 1. Stop the repo's services, set a short timeout in .env, and start again
+bun run stop
+echo "STEP_TIMEOUT_MS=10000" >> .env
+bun run start &     # wait until orchestrator.log shows "OrchestratorService started."
+
+# 2. Pause the math worker (signal the `bun src/...` process, not the `bun run` wrapper)
+MATH=$(pgrep -f "bun src/node/apps/mathApp.ts")
+kill -STOP $MATH
+
+# 3. Ask in the UI (or over the WebSocket):
+what is 12*9
+#    After ~10 s the UI shows "The math tool didn't respond within 10 s."
+#    orchestrator.log:  PlanFailed code=step-timeout failedTool=math reason=step 0 (math) did not respond within 10s
+
+# 4. Resume the worker: its late result is ignored
+kill -CONT $MATH
+#    orchestrator.log:  ignored reason=plan-terminal plan status=failed
+```
+
+### Restart persistence
+
+```bash
+# Pause math again and ask again. As soon as orchestrator.log shows dispatching tool="math":
+kill -STOP $MATH
+kill -9 $(pgrep -f "bun src/node/orchestration/orchestrator.ts")
+nohup bun src/node/orchestration/orchestrator.ts >> scripts/logs/services/orchestrator.log 2>&1 &
+```
+
+The restarted orchestrator logs `rescheduled 1 step timer(s)` and publishes `StepTimedOut` at the original deadline (an overdue deadline fires immediately). The `PlanFailed` follows as soon as its consumer is assigned its partitions again: a `kill -9`'d consumer holds its group membership until the broker's session timeout (about 30 s with kafkajs defaults), so the UI may see the failure after that, not exactly at the deadline. If the worker's result is already in the log it has a lower offset than the new `StepTimedOut`, so the real result wins.
+
+Timers live in the orchestrator: no step times out while it is down.
+
+---
+
+## Scenario 7 — LLM Misconfigured, Slow or Empty
+
+**What breaks:** The language model cannot answer: a bad or missing key, a model server that hangs, or one that returns blank text.
+
+**What the code does:** `callLLM` bounds every attempt and the whole call. The router falls back to its regex planner on any LLM failure. The synthesizer turns it into a `ConversationFailed` that the web server maps to the existing error frame. No DLQ record is written and no partition is blocked.
+
+### Steps
+
+```bash
+# A. Invalid key. In .env: LLM_PROVIDER=openai and OPENAI_API_KEY=sk-invalid, then restart and ask: hi
+#    router.log  [router] mode=regex-fallback reason="OpenAI HTTP 401 …"
+#    answer.log  one "[llm] provider=openai attempt=1/3 outcome=auth …", no retry
+#    UI          "The assistant's language model is misconfigured. Check the server logs."
+
+# B. Missing key. Remove OPENAI_API_KEY with LLM_PROVIDER=openai: every service still starts, and the
+#    query shows the same message; the logs say "OPENAI_API_KEY is not set (LLM_PROVIDER=openai)".
+#    With LLM_PROVIDER=ollama and Ollama running, no key is needed at all.
+
+# C. Hanging model. Run a server that never answers, and point Ollama at it:
+bun -e 'Bun.serve({port:11999,fetch:()=>new Promise(()=>{})})' &
+#    .env: LLM_PROVIDER=ollama  OLLAMA_HOST=http://localhost:11999  LLM_ATTEMPT_TIMEOUT_MS=3000   (restart, ask: hi)
+#    router.log  one timed-out attempt (outcome=timeout ms=3000), then mode=regex-fallback
+#    answer.log  attempt=1/3, 2/3, 3/3 all outcome=timeout
+#    UI          after ~10 s of synthesis: "The language model is unavailable right now. Try again."
+#    A second query right afterwards is handled: nothing is stuck.
+
+# D. Blank answers. Point OLLAMA_HOST at a server that replies {"message":{"content":"  "}}:
+#    answer.log shows three outcome=empty-response attempts, then the UI shows
+#    "The language model returned an empty answer. Try again."
+```
+
+### Expected outcome
+
+`ConversationFailed{stage:"synthesis"}` with `llm-misconfigured`, `llm-unavailable` or `empty-answer` respectively. The `dead-letter-queue` gains no record, and every consumer group, including `answer-synthesizer`, has lag 0.
+
+---
+
+## Scenario 8 — Duplicate `PlanCompleted`
+
+**What breaks:** `PlanCompleted` is published twice (for example after an orchestrator crash between the publish and the state write).
+
+**What the code does:** The synthesizer writes `done:<conversationId>` only after the terminal event was published. A second synthesize command finds it and does nothing.
+
+### Steps
+
+```bash
+# 1. Ask a normal question in the UI, e.g. "what is 7*8", then read its PlanCompleted (key and value, tab-separated)
+CID=<the conversationId from aggregator.log>
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic conversation-events --from-beginning --property print.key=true --timeout-ms 5000 \
+  | grep "$CID" | grep PlanCompleted > plancompleted.txt
+
+# 2. Republish it (the key and the JSON are separated by a tab)
+docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
+  --topic conversation-events --property parse.key=true --property key.separator=$'\t' < plancompleted.txt
+```
+
+### Expected outcome
+
+`aggregator.log` shows a second `SynthesizeFinalAnswerRequested emitted`. `answer.log` shows `[synthesizer] conversationId=<cid> ignored duplicate` and no new `[llm]` line, and `jq` finds exactly one user/assistant pair with that `conversationId` in `history.json`:
+
+```bash
+jq --arg c "$CID" '[.[] | .[] | select(.conversationId==$c)] | length' history.json   # 2
+```
+
+---
+
+## Scenario 9 — Poison Message That Reaches the User
+
+**What breaks:** A message that belongs to a conversation can never be processed.
+
+**What the code does:** After the DLQ record is published, the service that owns that message type publishes `ConversationFailed{code:"internal-error"}` so the user is told (the `onDeadLettered` hook; see `docs/architecture.md`). Exactly one service owns each type, so one poison message produces one such event.
+
+### Steps
+
+```bash
+U=$(uuidgen | tr A-Z a-z)
+# empty userInput violates the UserQueryReceived contract
+printf '%s|{"conversationId":"%s","timestamp":1,"eventType":"UserQueryReceived","payload":{"userInput":"","sessionId":"s"}}\n' "$U" "$U" \
+  | docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic user-commands --property parse.key=true --property key.separator='|'
+
+# DLQ records for $U
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic dead-letter-queue --from-beginning --timeout-ms 8000 2>/dev/null | grep "$U" \
+  | jq -c '{class:.payload.error.class, group:.payload.consumer.group}'
+# ConversationFailed events for $U
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic conversation-events --from-beginning --property print.key=true --timeout-ms 8000 2>/dev/null | grep "$U" | cut -f2 \
+  | jq -c '{eventType, stage:.payload.stage, code:.payload.code}'
+```
+
+### Expected outcome
+
+Two `contract-violation` DLQ records (`router-plan-service` and `answer-synthesizer`), and **exactly one** `ConversationFailed{stage:"routing", code:"internal-error"}`, none with `stage:"synthesis"`: the synthesizer's `UserQueryReceived` consumption is a cache fill, so the router alone owns that failure. `router.log` shows `ConversationFailed stage=routing code=internal-error (dead-lettered UserQueryReceived)`. In the UI the user would see "Something went wrong while planning your request (ref `<first 8 characters of the id>`)."
+
+The same pattern with a contract-violating `PlanGenerated` (`"steps":[]`) gives `ConversationFailed{stage:"orchestration"}` (the orchestrator reports only when no plan exists), and with a contract-violating `PlanCompleted` it gives `stage:"aggregation"`.
+
+---
+
+## Scenario 10 — Corrupt `history.json`
+
+**What breaks:** `history.json` is truncated or contains invalid data (a crash during an old non-atomic write, a manual edit).
+
+**What the code does:** Writes are atomic, so the app itself does not produce this. If it happens, the synthesizer (the only writer) moves the file to `history.json.corrupt-<timestamp>`, logs an ERROR and starts a fresh file; readers log an ERROR and use no history. Earlier context stays on disk in the quarantined file.
+
+### Steps
+
+```bash
+cp history.json history.backup.json     # keep your history
+printf '{' > history.json
+#    Ask any question in the UI; it is answered.
+ls history.json*                         # history.json  history.json.corrupt-<ts>
+jq . history.json                        # valid again, holding the new exchange
+```
+
+### Expected outcome
+
+`answer.log` shows `[history] ERROR … was corrupt (…); moved to …/history.json.corrupt-<ts>, starting a fresh history`, and `router.log` shows an ERROR for the read it did first. The answer still arrives.
 
 ---
 
@@ -281,7 +445,12 @@ No socket is pending for an injected conversation, so the web server sends **no*
 | Test | Mechanism | Recovery |
 |---|---|---|
 | Worker crash | Kafka redelivers from the last committed offset on restart | Automatic |
-| Orchestrator crash | Kafka redelivery + LevelDB state when the next result arrives (no startup scan) | Automatic for redelivered events |
+| Orchestrator crash | Kafka redelivery + LevelDB state when the next result arrives; step timers re-armed on startup | Automatic for redelivered events |
 | Duplicate events | `stepIndex` + `toolName` check in the orchestrator; emit, then persist, then offset commit | Automatic for plan state (duplicate downstream events remain) |
 | Poison message | Consumer wrapper validates, writes `MessageDeadLettered`, commits the offset | Automatic for the partition; the dead letter needs manual inspection |
-| Tool error | Orchestrator emits `PlanFailed`; no dead letter | The plan fails; the error reaches the UI |
+| Tool error | Orchestrator emits `PlanFailed{code:"tool-error"}`; no dead letter | The plan fails; the error reaches the UI |
+| Unanswered tool step | `StepTimedOut` through the partition → `PlanFailed{code:"step-timeout"}`; deadlines persisted and re-armed | The plan fails after `STEP_TIMEOUT_MS`; the UI shows which tool timed out |
+| LLM misconfigured, slow or empty | Per-attempt timeouts, bounded retries in `callLLM`, regex fallback in the router, `ConversationFailed` from the synthesizer | The user sees an error message; no DLQ record |
+| Duplicate `PlanCompleted` | Synthesizer `done:` marker, set only after the publish | One answer, one history entry |
+| Poison message that belongs to a conversation | DLQ record, then `ConversationFailed{internal-error}` from the owning service | The user is told; the dead letter needs manual inspection |
+| Corrupt `history.json` | Atomic writes; the writer quarantines the file | Answers continue; old context kept on disk |
