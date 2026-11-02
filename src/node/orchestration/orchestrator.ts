@@ -8,8 +8,15 @@ import {
 } from "../../../shared/kafka/client";
 import { nonRetryable } from "../../../shared/kafka/errors";
 import { TOPICS, type TopicName } from "../../../shared/topics";
-import { initializeStore, getPlan, savePlan } from "../../../shared/state/planStore";
+import { initializeStore, getPlan, savePlan, listRunningPlans } from "../../../shared/state/planStore";
 import { transition, type OrchestratorInput } from "./planTransition";
+import { createStepTimers, rescheduleRunning, type StepTimers } from "./stepTimers";
+
+/** One global bound on how long a dispatched tool step may go unanswered. */
+const STEP_TIMEOUT_MS = (() => {
+  const n = Number(process.env.STEP_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 30_000;
+})();
 
 // INVARIANT: emit-before-persist is correct only because every event for a
 // conversation is keyed by conversationId (→ one partition of conversation-events)
@@ -20,6 +27,7 @@ import { transition, type OrchestratorInput } from "./planTransition";
 // revisiting this.
 async function handle(
   producer: Awaited<ReturnType<typeof createProducer>>,
+  timers: StepTimers,
   event: OrchestratorInput
 ): Promise<void> {
   const { conversationId } = event;
@@ -27,7 +35,9 @@ async function handle(
   const state = await getPlan(conversationId); // throws on I/O error → redelivery
   // transition() is pure: anything it throws is a bug in this message's handling,
   // not an infrastructure failure, so it is dead-lettered rather than retried.
-  const { state: next, emit, decision } = nonRetryable(() => transition(state, event, Date.now()));
+  const { state: next, emit, decision } = nonRetryable(() =>
+    transition(state, event, Date.now(), { stepTimeoutMs: STEP_TIMEOUT_MS })
+  );
 
   if (decision.kind === "ignored") {
     const log = decision.reason === "future-step" ? console.error : console.log;
@@ -52,6 +62,14 @@ async function handle(
   // 3. persist (sync; throws StoreError)
   await savePlan(conversationId, next!);
 
+  // 3b. arm or disarm the step timer. Timers only publish StepTimedOut; the decision
+  //     happens in transition(), in this partition's order.
+  if (next!.status === "running") {
+    timers.schedule(conversationId, next!.stepIndex, next!.stepDeadline!);
+  } else {
+    timers.cancel(conversationId);
+  }
+
   // 4. return → kafkajs resolves the offset; it is committed at the end of the batch
   switch (decision.kind) {
     case "started":
@@ -71,7 +89,9 @@ async function handle(
       break;
     }
     case "failed":
-      console.log(`[orchestrator] conversationId=${conversationId} plan FAILED reason=${decision.reason}`);
+      console.log(
+        `[orchestrator] conversationId=${conversationId} PlanFailed code=${decision.code} failedTool=${decision.failedTool} reason=${decision.reason}`
+      );
       break;
   }
 }
@@ -82,6 +102,19 @@ await initializeStore();
 console.log("[orchestrator] PlanStore initialized");
 
 const producer = await createProducer();
+
+const timers = createStepTimers({
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  now: () => Date.now(),
+  publish: (event) => publish(producer, TOPICS.CONVERSATION_EVENTS, event),
+});
+
+// Plans that were running when the previous process stopped: re-arm their deadlines
+// (overdue ones fire now, and a result already in the log still wins by offset order).
+const rescheduled = rescheduleRunning(timers, await listRunningPlans(), Date.now(), STEP_TIMEOUT_MS);
+console.log(`[orchestrator] rescheduled ${rescheduled} step timer(s) stepTimeoutMs=${STEP_TIMEOUT_MS}`);
+
 const consumer = await createConsumer("orchestrator-service");
 
 registerShutdown([producer, consumer]);
@@ -92,8 +125,8 @@ await subscribeAndRun({
   service: "orchestrator",
   producer,
   topic: TOPICS.CONVERSATION_EVENTS,
-  types: ["PlanGenerated", "ToolInvocationResulted"],
-  handler: (event) => handle(producer, event),
+  types: ["PlanGenerated", "ToolInvocationResulted", "StepTimedOut"],
+  handler: (event) => handle(producer, timers, event),
 });
 
 console.log("[orchestrator] OrchestratorService started.");

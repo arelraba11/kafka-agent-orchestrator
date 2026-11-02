@@ -11,6 +11,8 @@ export interface PlanState {
   stepIndex: number;                 // index of the step awaiting a result; equals plan.length once completed
   results: StepResultEntry[];        // accumulated tool results
   status: "running" | "completed" | "failed";
+  /** Epoch ms by which the awaited step must answer; null once terminal. Absent on plans stored before step timeouts (treated as null). */
+  stepDeadline: number | null;
   planReceivedAt: number;            // epoch ms — used for latency benchmarking
   sessionId: string;                 // groups conversations into a session for history
 }
@@ -60,7 +62,27 @@ export async function getPlan(conversationId: string): Promise<PlanState | null>
     throw new StoreError(`planStore read failed: ${err?.message ?? err}`, { cause: err });
   }
   if (raw === undefined) return null;
-  return JSON.parse(raw) as PlanState;
+  const state = JSON.parse(raw) as PlanState;
+  return { ...state, stepDeadline: state.stepDeadline ?? null };
+}
+
+/**
+ * Every plan still `running`, for rescheduling step timers on startup. Scans the whole
+ * store once (tombstones included); an I/O failure is a StoreError (retryable).
+ */
+export async function listRunningPlans(): Promise<{ conversationId: string; state: PlanState }[]> {
+  const running: { conversationId: string; state: PlanState }[] = [];
+  try {
+    for await (const [conversationId, raw] of db.iterator()) {
+      const state = JSON.parse(raw) as PlanState;
+      if (state.status === "running") {
+        running.push({ conversationId, state: { ...state, stepDeadline: state.stepDeadline ?? null } });
+      }
+    }
+  } catch (err: any) {
+    throw new StoreError(`planStore scan failed: ${err?.message ?? err}`, { cause: err });
+  }
+  return running;
 }
 
 export async function savePlan(conversationId: string, state: PlanState): Promise<void> {
