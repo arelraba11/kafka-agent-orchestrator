@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join, relative } from "path";
 import { TOPICS } from "../../shared/topics";
-import { testKafka } from "./harness/broker";
+import { COMPOSE_FILE, TEST_PROJECT, compose, run, testKafka } from "./harness/broker";
 import { FAKE_API_KEY, startFakeLlm, type FakeLlm } from "./harness/fakeLlm";
 import { newCid, short, tag } from "./harness/ids";
 import { createNamespace, type Namespace } from "./harness/namespace";
@@ -95,6 +95,39 @@ describe("settle()", () => {
     const err = await settle(ns, observer, [{ group: "ghost-group", topic: TOPICS.USER_COMMANDS }], { timeoutMs: 500 }).catch((e) => e);
     expect(String(err)).toMatch(/timed out/);
     expect(String(err)).toMatch(/ghost-group lag=1/);
+  });
+});
+
+describe("docker isolation", () => {
+  const DEV_PROJECT = "kafka-agent-orchestrator";
+
+  test("every compose command names the test file AND the test project explicitly", () => {
+    const args = compose("ps");
+    expect(args[args.indexOf("-f") + 1]).toBe(COMPOSE_FILE);
+    expect(args[args.indexOf("-p") + 1]).toBe(TEST_PROJECT);
+    expect(TEST_PROJECT).not.toBe(DEV_PROJECT);
+  });
+
+  test("an exported COMPOSE_PROJECT_NAME of the dev project cannot redirect them to the dev container", async () => {
+    const containerOf = (project: string) =>
+      run([
+        "docker", "ps", "-q",
+        "--filter", `label=com.docker.compose.project=${project}`,
+        "--filter", "label=com.docker.compose.service=kafka",
+      ]).then((r) => r.out.trim());
+    const testBroker = await containerOf(TEST_PROJECT);
+    expect(testBroker, "the test broker is up (preload)").not.toBe("");
+
+    const saved = process.env.COMPOSE_PROJECT_NAME;
+    process.env.COMPOSE_PROJECT_NAME = DEV_PROJECT; // what a dev shell might export
+    try {
+      const seen = (await run(compose("ps", "-q", "kafka"))).out.trim();
+      // read-only ps -q: must be the TEST broker (docker ps prints the short id, compose the full one)
+      expect(seen.startsWith(testBroker), `compose resolved to ${seen}, the test broker is ${testBroker}`).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.COMPOSE_PROJECT_NAME;
+      else process.env.COMPOSE_PROJECT_NAME = saved;
+    }
   });
 });
 

@@ -8,6 +8,8 @@ import { join } from "path";
 
 export const REPO_ROOT = join(import.meta.dir, "../../..");
 export const COMPOSE_FILE = join(REPO_ROOT, "infra/docker-compose.test.yml");
+/** The compose project of the test broker. Must differ from the dev stack's project, `kafka-agent-orchestrator`. */
+export const TEST_PROJECT = "kafka-agent-orchestrator-test";
 export const TEST_PORT = Number(process.env.TEST_KAFKA_PORT ?? 19092);
 export const BROKERS = [`localhost:${TEST_PORT}`];
 
@@ -15,7 +17,7 @@ if (TEST_PORT === 9092) {
   throw new Error("TEST_KAFKA_PORT=9092 is the dev broker's port; the integration suite never uses it");
 }
 
-async function run(cmd: string[], opts: { allowFail?: boolean } = {}): Promise<{ code: number; out: string }> {
+export async function run(cmd: string[], opts: { allowFail?: boolean } = {}): Promise<{ code: number; out: string }> {
   const p = Bun.spawn(cmd, {
     cwd: REPO_ROOT,
     env: { ...process.env, TEST_KAFKA_PORT: String(TEST_PORT) },
@@ -27,7 +29,10 @@ async function run(cmd: string[], opts: { allowFail?: boolean } = {}): Promise<{
   return { code, out: out + err };
 }
 
-const compose = (...args: string[]) => ["docker", "compose", "-f", COMPOSE_FILE, ...args];
+// -f AND -p, always: the project name must not come from the environment. An exported
+// COMPOSE_PROJECT_NAME beats the file's `name:`, and the dev stack's service is also called
+// `kafka`, so without -p a dev shell could point `down -v` or `pause` at the dev container.
+export const compose = (...args: string[]) => ["docker", "compose", "-f", COMPOSE_FILE, "-p", TEST_PROJECT, ...args];
 
 function portInUse(port: number): Promise<boolean> {
   return new Promise((resolve) => {
