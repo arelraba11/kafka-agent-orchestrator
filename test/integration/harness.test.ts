@@ -7,6 +7,7 @@ import { FAKE_API_KEY, startFakeLlm, type FakeLlm } from "./harness/fakeLlm";
 import { newCid, short, tag } from "./harness/ids";
 import { createNamespace, type Namespace } from "./harness/namespace";
 import { startObserver, type Observer } from "./harness/observer";
+import { assertRagPrerequisites } from "./harness/services";
 import { settle } from "./harness/settle";
 
 // Self-test of the harness itself: if these fail, no other result can be trusted.
@@ -153,5 +154,17 @@ describe("no fixed sleeps", () => {
       for (const re of forbidden) if (re.test(text)) offenders.push(`${relative(root, file)}: ${re.source}`);
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("RAG prerequisites", () => {
+  test("a missing index fails fast with the index_kb.py fix, not a startup timeout", () => {
+    expect(() => assertRagPrerequisites(join(import.meta.dir, "no-such-chroma-db"), process.execPath)).toThrow(/index_kb\.py/);
+  });
+  test("a missing Python fails fast with the venv fix", () => {
+    expect(() => assertRagPrerequisites(import.meta.dir, join(import.meta.dir, "no-such-python"))).toThrow(/venv/);
+  });
+  test("both present: no error", () => {
+    expect(() => assertRagPrerequisites(import.meta.dir, process.execPath)).not.toThrow();
   });
 });

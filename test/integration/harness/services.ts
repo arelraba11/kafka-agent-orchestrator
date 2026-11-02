@@ -1,5 +1,5 @@
 import { AssignerProtocol } from "kafkajs";
-import { closeSync, mkdirSync, openSync, readFileSync } from "fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync } from "fs";
 import { join } from "path";
 import { TOPICS, type TopicName } from "../../../shared/topics";
 import { BROKERS, REPO_ROOT } from "./broker";
@@ -15,7 +15,7 @@ import { wake, waitFor } from "./wait";
 
 export type ServiceName =
   | "router" | "orchestrator" | "aggregator" | "synthesizer"
-  | "math" | "weather" | "exchange" | "chat" | "web";
+  | "math" | "weather" | "exchange" | "chat" | "web" | "rag";
 
 export const SERVICE_DEFS: Record<ServiceName, { file: string; group: string; topic: TopicName }> = {
   router:       { file: "src/node/core/routerService.ts",          group: "router-plan-service",   topic: TOPICS.USER_COMMANDS },
@@ -27,7 +27,28 @@ export const SERVICE_DEFS: Record<ServiceName, { file: string; group: string; to
   exchange:     { file: "src/node/apps/exchangeApp.ts",            group: "exchange-tool-worker",  topic: TOPICS.TOOL_INVOCATION_REQUESTS },
   chat:         { file: "src/node/apps/generalChatApp.ts",         group: "chat-tool-worker",      topic: TOPICS.TOOL_INVOCATION_REQUESTS },
   web:          { file: "src/node/core/webServer.ts",              group: "ui-web-final-answer",   topic: TOPICS.CONVERSATION_EVENTS },
+  rag:          { file: "src/python/rag/rag_retriever.py",         group: "rag-tool-worker",       topic: TOPICS.TOOL_INVOCATION_REQUESTS },
 };
+
+// The RAG worker is the one Python service. It runs as `start.ts` runs it (`-u`, no `-I`: it
+// imports its sibling contracts.py), and needs the venv plus the index built by index_kb.py.
+const PYTHON_BIN = process.env.PYTHON_BIN || join(REPO_ROOT, "src/python/venv/bin/python");
+const CHROMA_DIR = join(REPO_ROOT, "src/python/rag/chroma_db");
+
+/** Fails fast, with the fix, when the RAG worker cannot run (instead of a startup timeout). */
+export function assertRagPrerequisites(chromaDir = CHROMA_DIR, python = PYTHON_BIN): void {
+  if (!existsSync(python)) {
+    throw new Error(
+      `RAG prerequisite missing: no Python at ${python}. Create the venv: ` +
+        "`cd src/python && python3 -m venv venv && source venv/bin/activate && pip install -r rag/requirements.txt` (or set PYTHON_BIN)."
+    );
+  }
+  if (!existsSync(chromaDir)) {
+    throw new Error(
+      `RAG prerequisite missing: no ChromaDB index at ${chromaDir}. Build it once: \`python src/python/rag/index_kb.py\` (with the venv active).`
+    );
+  }
+}
 
 export interface ExitInfo {
   code: number | null;
@@ -128,6 +149,7 @@ export async function createServices(
       LLM_ATTEMPT_TIMEOUT_MS: "1000",
       LLM_ROUTER_BUDGET_MS: "3000",
       LLM_SYNTH_BUDGET_MS: "8000",
+      RAG_SEND_TIMEOUT_S: "3",
     };
     if (name === "router" || name === "synthesizer") {
       env.OPENAI_API_KEY = FAKE_API_KEY;
@@ -153,9 +175,14 @@ export async function createServices(
   async function start(name: ServiceName, overrides: Record<string, string> = {}): Promise<void> {
     const existing = procs.get(name);
     if (existing && existing.info === null) throw new Error(`service ${name} is already running`);
+    if (name === "rag") assertRagPrerequisites();
     mkdirSync(ns.logDir, { recursive: true });
     const fd = openSync(logPath(name), "a");
-    const proc = Bun.spawn([process.execPath, "--no-env-file", join(REPO_ROOT, SERVICE_DEFS[name].file)], {
+    const cmd =
+      name === "rag"
+        ? [PYTHON_BIN, "-u", join(REPO_ROOT, SERVICE_DEFS[name].file)]
+        : [process.execPath, "--no-env-file", join(REPO_ROOT, SERVICE_DEFS[name].file)];
+    const proc = Bun.spawn(cmd, {
       cwd: REPO_ROOT,
       env: buildEnv(name, overrides),
       stdin: "ignore",
@@ -192,7 +219,8 @@ export async function createServices(
         return m;
       },
       {
-        timeoutMs: 30_000,
+        // the RAG worker loads an embedding model first
+        timeoutMs: name === "rag" ? 90_000 : 30_000,
         what: `service ${name} to be ready (group ${SERVICE_DEFS[name].group} stable and fully assigned)`,
         context: () => `  log ${logPath(name)}:\n${logTail(name)}`,
       }
