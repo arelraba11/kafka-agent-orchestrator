@@ -295,8 +295,6 @@ Single local run, 2026-04-05, `LLM_PROVIDER=openai` (gpt-4o-mini), earlier 3-pro
 
 Everything except the two LLM calls accounts for under 50 ms; the LLM calls are ~99% of end-to-end latency.
 
-Full report: [`docs/benchmark.md`](docs/benchmark.md)
-
 ---
 
 ## Conclusions
@@ -378,7 +376,4 @@ Full report: [`docs/benchmark.md`](docs/benchmark.md)
 | Document | Content |
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | Detailed architecture + event schemas |
-| [`docs/benchmark.md`](docs/benchmark.md) | Latency measurements from a single 27-query run |
-| [`docs/demo-scenarios/demo-scenarios.md`](docs/demo-scenarios/demo-scenarios.md) | Step-by-step demo with real log output |
-| [`docs/test-run-2026-04-11.md`](docs/test-run-2026-04-11.md) | Recorded test run |
 | [`docs/resilience-demo.md`](docs/resilience-demo.md) | Crash + recovery reproduction steps |
