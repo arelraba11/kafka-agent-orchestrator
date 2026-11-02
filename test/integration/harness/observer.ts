@@ -30,6 +30,8 @@ export interface Observer {
   resultsFor(cid: string, stepIndex: number): Observed[];
   /** Every dead-letter record, each validated against MessageDeadLetteredSchema (throws if one is invalid). */
   dlq(): MessageDeadLettered[];
+  /** Dead-letter records counted by `<logical group>|<error class>|<source key>`. */
+  dlqCounts(): Record<string, number>;
   /** Records on contract topics that failed validation (poison the test did not inject on purpose). */
   invalid(): Observed[];
   describe(cid?: string): string;
@@ -107,6 +109,14 @@ export async function startObserver(ns: Namespace): Promise<Observer> {
       messages
         .filter((m) => m.topic === TOPICS.DEAD_LETTER_QUEUE)
         .map((m) => MessageDeadLetteredSchema.parse(m.value) as MessageDeadLettered),
+    dlqCounts: () => {
+      const counts: Record<string, number> = {};
+      for (const r of observer.dlq()) {
+        const k = `${r.payload.consumer.group}|${r.payload.error.class}|${r.payload.source.key}`;
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
+      return counts;
+    },
     invalid: () => messages.filter((m) => m.topic !== TOPICS.DEAD_LETTER_QUEUE && !m.valid),
     describe: (cid) =>
       messages

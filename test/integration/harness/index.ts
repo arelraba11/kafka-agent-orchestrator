@@ -11,7 +11,8 @@ import type { Producer } from "kafkajs";
 import { testKafka } from "./broker";
 import type { TopicName } from "../../../shared/topics";
 
-export { newCid, short, tag, token } from "./ids";
+export { cidForPartition, newCid, partitionOf, short, tag, token } from "./ids";
+export { pauseBroker, unpauseBroker } from "./broker";
 export { waitFor } from "./wait";
 export type { ServiceName } from "./services";
 
