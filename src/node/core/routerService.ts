@@ -8,7 +8,7 @@ import {
 import { TOPICS } from "../../../shared/topics";
 import { ToolName } from "../../../shared/schemas/common";
 import type { PlanGenerated, PlanStep } from "../../../shared/schemas/PlanGenerated";
-import { callLLM } from "../../../shared/llm/openai";
+import { callLLM } from "../../../shared/llm/callLLM";
 import { routerPlanPrompt } from "../../../shared/prompts/routerPlanPrompt";
 import { getHistory } from "../../../shared/state/historyStore";
 
@@ -63,10 +63,14 @@ function generatePlanRegex(userInput: string): PlanStep[] {
 
 const VALID_TOOLS = new Set<string>(ToolName.options);
 
+// One attempt within 15 s: a slow or failing LLM must not hold the partition. Any
+// LlmError (or a bad plan) falls back to the regex planner.
+const ROUTER_LLM = { budgetMs: 15_000, maxAttempts: 1 } as const;
+
 async function generatePlanLLM(userInput: string, sessionId: string): Promise<PlanStep[]> {
   try {
     const history = await getHistory(sessionId);
-    const raw = await callLLM(routerPlanPrompt(userInput, history));
+    const raw = await callLLM(routerPlanPrompt(userInput, history), ROUTER_LLM);
     const parsed = JSON.parse(raw);
 
     if (

@@ -6,7 +6,7 @@ import {
   registerShutdown,
 } from "../../../shared/kafka/client";
 import { TOPICS } from "../../../shared/topics";
-import { callLLM } from "../../../shared/llm/openai";
+import { callLLM } from "../../../shared/llm/callLLM";
 import { synthesisPrompt } from "../../../shared/prompts/synthesisPrompt";
 import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
 import { getHistory, appendToHistory } from "../../../shared/state/historyStore";
@@ -55,7 +55,7 @@ await subscribeAndRun({
       result: String(item.result.value ?? item.result.context ?? JSON.stringify(item.result)),
     }));
 
-    const answer = await callLLM(synthesisPrompt(userQuery, toolResults, history));
+    const answer = await callLLM(synthesisPrompt(userQuery, toolResults, history), { budgetMs: 60_000, maxAttempts: 3 });
 
     const finalEvent: FinalAnswerSynthesized = {
       conversationId,

@@ -6,6 +6,7 @@
 import net from "net";
 import { join } from "path";
 import { mkdirSync, openSync, closeSync } from "fs";
+import { DEFAULT_OLLAMA_MODEL } from "../shared/llm/providers";
 
 const ROOT    = join(import.meta.dir, "..");
 const LOG_DIR = join(ROOT, "scripts/logs/services");
@@ -52,7 +53,7 @@ async function ensureTopics(): Promise<void> {
 // ─── Ollama model pull ────────────────────────────────────────────────────────
 
 async function pullOllamaModel(): Promise<void> {
-  const model = process.env.OLLAMA_MODEL ?? "llama3.2";
+  const model = process.env.OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL;
   const host  = process.env.OLLAMA_HOST  ?? "http://localhost:11434";
   console.log(`Checking Ollama at ${host}...`);
   try {
