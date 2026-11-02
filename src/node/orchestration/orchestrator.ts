@@ -15,6 +15,7 @@ import { createStepTimers, rescheduleRunning, type StepTimers } from "./stepTime
 import { conversationFailedHook } from "../../../shared/kafka/conversationFailed";
 import { FAILURE_OWNERSHIP } from "../../../shared/kafka/failureOwnership";
 import { stepTimeoutMs } from "../../../shared/stepTimeout";
+import { faultPoint } from "../../../shared/testing/faultPoint";
 
 const STEP_TIMEOUT_MS = stepTimeoutMs();
 
@@ -55,12 +56,15 @@ async function handle(
 
   // 2. emit (acks=-1; a failed send throws ProducerError → kafkajs redelivers,
   //    nothing persisted yet)
+  await faultPoint("orchestrator:before-emit", { decision: decision.kind });
   for (const m of emit) {
     await publish<TopicName>(producer, m.topic, m.message);
   }
+  await faultPoint("orchestrator:after-emit", { decision: decision.kind });
 
   // 3. persist (sync; throws StoreError)
   await savePlan(conversationId, next!);
+  await faultPoint("orchestrator:after-persist", { decision: decision.kind });
 
   // 3b. arm or disarm the step timer. Timers only publish StepTimedOut; the decision
   //     happens in transition(), in this partition's order.

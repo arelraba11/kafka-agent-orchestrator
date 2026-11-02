@@ -1,5 +1,6 @@
 import { LlmError } from "../../../shared/llm/errors";
 import { synthesisPrompt } from "../../../shared/prompts/synthesisPrompt";
+import { faultPoint } from "../../../shared/testing/faultPoint";
 import type { ConversationFailed } from "../../../shared/schemas/ConversationFailed";
 import type { FinalAnswerSynthesized } from "../../../shared/schemas/FinalAnswerSynthesized";
 import type { SynthesizeFinalAnswerRequested } from "../../../shared/schemas/SynthesizeFinalAnswerRequested";
@@ -110,7 +111,9 @@ export async function synthesize(command: SynthesizeFinalAnswerRequested, deps: 
   let outcome = await store.get(`o:${conversationId}`);
   if (outcome === null) {
     outcome = await computeOutcome(command, deps);
+    await faultPoint("synthesizer:after-llm");
     await store.put(`o:${conversationId}`, outcome);
+    await faultPoint("synthesizer:after-memo");
   }
 
   // 3. publish the terminal event; a failure throws a RetryableError and done stays absent
@@ -129,12 +132,14 @@ export async function synthesize(command: SynthesizeFinalAnswerRequested, deps: 
       payload: { stage: "synthesis", code: outcome.code, reason: outcome.reason },
     });
   }
+  await faultPoint("synthesizer:after-publish");
 
   // 4. history (answers only), idempotent by conversationId
   if (outcome.kind === "answer" && sessionId) {
     const query = await store.get(`q:${conversationId}`);
     await deps.appendToHistory(sessionId, conversationId, query?.userInput ?? "", outcome.answer);
   }
+  await faultPoint("synthesizer:after-history");
 
   // 5. done + cleanup, atomically
   await store.batch([

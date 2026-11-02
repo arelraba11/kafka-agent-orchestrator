@@ -27,6 +27,7 @@ from sentence_transformers import SentenceTransformer
 
 import contracts
 import kafka_config
+from fault_point import fault_point
 from price import price_with_fallback
 from source_match import prefer_product_match
 
@@ -303,7 +304,9 @@ def run() -> None:
             dead_letter(producer, consumer, message, exc)
             continue
 
+        fault_point("rag:before-send")
         emit_result(producer, result_message)
+        fault_point("rag:after-send")
         consumer.commit()
 
 

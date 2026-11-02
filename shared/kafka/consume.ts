@@ -7,6 +7,7 @@ import {
 } from "../schemas/index";
 import type { MessageDeadLettered } from "../schemas/MessageDeadLettered";
 import type { TopicName } from "../topics";
+import { faultPoint } from "../testing/faultPoint";
 import { buildDeadLetter, type RawMessage } from "./deadLetter";
 import {
   ContractViolationError,
@@ -199,6 +200,7 @@ export async function processMessage<N extends MessageName>(
         log.warn(
           `[kafka] retrying ${describe(raw)} group=${ctx.group} reason=${JSON.stringify((err as Error).message)} (infrastructure error, will be redelivered)`
         );
+        await faultPoint("kafka:retry");
         throw err;
       case "dead-letter":
         return deadLetter(err, prior + 1);
