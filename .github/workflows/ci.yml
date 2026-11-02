@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-root-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run schemas:check
+
+  python:
+    name: python
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: ./.github/actions/python-venv
+      - run: bun run test:py
+
+  frontend:
+    name: frontend
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-fe-${{ runner.os }}-${{ hashFiles('src/frontend/bun.lock') }}
+      - run: bun run build:web
+
+  integration:
+    name: integration
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-root-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/python-venv
+      - uses: ./.github/actions/rag-index
+      - name: Integration suite (fake LLM, offline model)
+        run: bun run test:int
+        env:
+          KEEP_BROKER: "1"
+          HF_HUB_OFFLINE: "1"
+      - name: Broker logs
+        if: failure()
+        run: |
+          mkdir -p test/integration/.logs
+          docker compose -f infra/docker-compose.test.yml logs --no-color > test/integration/.logs/broker.log
+      - name: Upload integration logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-logs
+          path: test/integration/.logs/
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Stop test broker
+        if: always()
+        run: docker compose -f infra/docker-compose.test.yml down -v
+
+  nightly:
+    name: nightly
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-root-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/python-venv
+      - uses: ./.github/actions/rag-index
+      - name: Integration suite x3 (flake detector, stops at the first failure)
+        env:
+          KEEP_BROKER: "1"
+          HF_HUB_OFFLINE: "1"
+        run: |
+          for i in 1 2 3; do
+            echo "::group::run $i"
+            bun run test:int
+            echo "::endgroup::"
+          done
+      - name: Broker logs
+        if: failure()
+        run: |
+          mkdir -p test/integration/.logs
+          docker compose -f infra/docker-compose.test.yml logs --no-color > test/integration/.logs/broker.log
+      - name: Upload integration logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-logs-nightly
+          path: test/integration/.logs/
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Stop test broker
+        if: always()
+        run: docker compose -f infra/docker-compose.test.yml down -v

@@ -153,6 +153,10 @@ export async function createServices(
       LLM_ROUTER_BUDGET_MS: "3000",
       LLM_SYNTH_BUDGET_MS: "8000",
       RAG_SEND_TIMEOUT_S: "3",
+      // Hugging Face cache knobs, passed only when set: CI warms the model online, then runs the
+      // suite with HF_HUB_OFFLINE=1 to prove the RAG worker never fetches at test time.
+      ...(process.env.HF_HOME ? { HF_HOME: process.env.HF_HOME } : {}),
+      ...(process.env.HF_HUB_OFFLINE ? { HF_HUB_OFFLINE: process.env.HF_HUB_OFFLINE } : {}),
       ...opts.env,
       ...overrides,
     };
