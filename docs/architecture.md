@@ -251,7 +251,7 @@ Logs `[Benchmark] synthesizerLatency=Xms`.
 
 Kafka carries every command and event in the pipeline, keyed by `conversationId`, so the history of a conversation can be read from the topics. This is event-driven rather than replay-based event sourcing:
 
-- Nothing replays events: consumers subscribe with `fromBeginning: false` (`shared/kafka/client.ts`), and the orchestrator's state lives only in LevelDB.
+- Nothing replays events: consumers subscribe with `fromBeginning: false` by default (`shared/kafka/client.ts`; `KAFKA_OFFSET_RESET=earliest` is used only by the integration suite), and the orchestrator's state lives only in LevelDB.
 - Compose sets no retention, so Kafka's default 7-day retention applies; events are not kept permanently.
 - Tool workers are functional: input event → output event, no shared mutable state.
 - If the orchestrator crashes mid-plan, Kafka redelivers the events whose offsets were not committed, and the orchestrator loads the plan from LevelDB when the next result arrives. Its only startup scan re-arms the step timers of `running` plans; it does not resume them.
@@ -333,6 +333,12 @@ Defined in `infra/docker-compose.yml`. Two containers, no ZooKeeper (KRaft mode)
 ChromaDB is embedded in the Python process (`PersistentClient`); it is not a container.
 
 Topics are created by `infra/create-topics.sh` (4 topics × 3 partitions); `bun run start` runs it too and exits 1 with the script's output if it fails.
+
+**Configuration.** Every address, path and timeout the services use is an environment variable whose default is the dev-stack value, so a plain `bun run start` is unchanged: `KAFKA_BROKERS` (comma-separated, default `localhost:9092`; the Python worker also accepts the legacy `KAFKA_BROKER` when `KAFKA_BROKERS` is unset), `KAFKA_NAMESPACE`, `KAFKA_OFFSET_RESET`, `KAFKA_SESSION_TIMEOUT_MS` / `KAFKA_HEARTBEAT_INTERVAL_MS` / `KAFKA_REBALANCE_TIMEOUT_MS`, `KAFKA_RETRIES`, `KAFKA_REQUEST_TIMEOUT_MS`, `RAG_SEND_TIMEOUT_S`, `PLAN_STORE_PATH`, `SYNTH_STORE_PATH`, `HISTORY_PATH`, `WEB_PORT`, `LLM_ROUTER_BUDGET_MS` and `LLM_SYNTH_BUDGET_MS` (see `.env.example`). `KAFKA_NAMESPACE` is a prefix for every topic and consumer group, applied only at the Kafka edge (`publish`, `subscribeAndRun`, `createConsumer` and the Python equivalents in `kafka_config.py`). Handlers and dead-letter records stay logical: `MessageDeadLettered.source.topic` and `consumer.group` never contain the prefix.
+
+**Test broker.** The integration suite (`bun run test:int`) runs against its own broker, defined in `infra/docker-compose.test.yml`: compose project `kafka-agent-orchestrator-test`, no `container_name`, `apache/kafka:3.8.0` on port `19092` (`TEST_KAFKA_PORT` overrides it), instant group joins, a 1 s minimum session timeout and topic auto-creation off. It is started and removed (`down -v`) by the suite itself, and shares nothing with the dev `kafka` container, port `9092`, `.plan-store/`, `.synth-store/` or `history.json`. Each test file gets its own namespace and temp state directory.
+
+**Fault points.** `shared/testing/faultPoint.ts` (TypeScript) and `src/python/rag/fault_point.py` give service code named places where the suite can count, crash (`SIGKILL`) or hold a process. They are no-ops unless `FAULT_DIR` is set, which only the suite does.
 
 ### Process management (`scripts/`)
 

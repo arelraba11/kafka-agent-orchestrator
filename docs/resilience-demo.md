@@ -6,6 +6,8 @@ All commands assume the repository root as the working directory, Kafka running 
 
 Kafka CLI tools are not on the container's PATH; call them as `/opt/kafka/bin/<tool>.sh`.
 
+Scenarios with an **Evidence** line are also proven by an automated test against a real broker (`bun run test:int`, see the README's Testing section). The manual steps below remain as demos.
+
 ---
 
 ## Scenario 1 — Worker Crash
@@ -98,6 +100,9 @@ convert 50 eur to usd
 
 New requests complete end-to-end after the restart. A plan that was in flight when the orchestrator died is redelivered by Kafka from the last committed offset, and the idempotent handler either re-applies the event or ignores it as a duplicate.
 
+
+**Evidence:** `test/integration/crash-orchestrator.test.ts` › C-b1, C-b2, C-b3 (killed after emitting, before persisting) and C-c1, C-c2, C-c3 (killed after persisting, before the offset commit). Each kills the orchestrator with `SIGKILL` at a named fault point and restarts it.
+
 ---
 
 ## Scenario 3 — Duplicate Events
@@ -152,6 +157,9 @@ docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh \
 The UI receives exactly one answer, and `aggregator.log` shows no second `PlanCompleted`.
 
 To see the live-plan case, re-publish a `ToolInvocationResulted` from step 1 of a multi-step plan (for example `weather in paris and convert 100 USD to EUR`) while the plan is still running. The orchestrator logs `ignored reason=duplicate-step` and the plan finishes normally. No automated integration test covers this yet; phase 5 adds them.
+
+
+**Evidence:** `test/integration/idempotency.test.ts` › D1 (a duplicate result while the plan is live does not re-dispatch the next step).
 
 ---
 
@@ -245,6 +253,9 @@ Each service logs one line per record, for example `[kafka] dead-lettered topic=
 
 **Not covered:** a dead letter is not replayed (there is no replay tool). A dead-lettered `ToolInvocationRequested` or `ToolInvocationResulted` is not reported by a hook; its plan fails through the step timeout (Scenario 6). Poison messages that a service owns are also reported to the user (Scenario 9).
 
+
+**Evidence:** `test/integration/poison.test.ts` › P2 (malformed, contract-violating and key-mismatched records on every partition of `conversation-events` are dead-lettered once per group that reads the type) and P-flow (the partitions keep flowing afterwards). `test/integration/retryable.test.ts` › X1 (a producer failure is retried, never dead-lettered).
+
 ---
 
 ## Scenario 5 — Tool Error
@@ -314,6 +325,9 @@ The restarted orchestrator logs `rescheduled 1 step timer(s)` and publishes `Ste
 
 Timers live in the orchestrator: no step times out while it is down.
 
+
+**Evidence:** `test/integration/timeouts.test.ts` › T1 (step timeout, `PlanFailed{code:"step-timeout"}`) and T3 (a restarted orchestrator re-arms the timer with the original deadline).
+
 ---
 
 ## Scenario 7 — LLM Misconfigured, Slow or Empty
@@ -351,6 +365,9 @@ bun -e 'Bun.serve({port:11999,fetch:()=>new Promise(()=>{})})' &
 
 `ConversationFailed{stage:"synthesis"}` with `llm-misconfigured`, `llm-unavailable` or `empty-answer` respectively. The `dead-letter-queue` gains no record, and every consumer group, including `answer-synthesizer`, has lag 0.
 
+
+**Evidence:** `test/integration/llm-failures.test.ts` › L2 (5xx on every attempt → `llm-unavailable`) and L3 (401 → `llm-misconfigured`, one call). The empty-answer, timeout, `Retry-After` and router-fallback cases are not yet integration-tested (planned: phase 5 Part B).
+
 ---
 
 ## Scenario 8 — Duplicate `PlanCompleted`
@@ -380,6 +397,9 @@ docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server
 ```bash
 jq --arg c "$CID" '[.[] | .[] | select(.conversationId==$c)] | length' history.json   # 2
 ```
+
+
+**Evidence:** `test/integration/idempotency.test.ts` › D4 (one LLM call, one history entry) and `test/integration/crash-synthesizer.test.ts` › S3 (synthesizer killed after publishing, before history and `done`).
 
 ---
 
